@@ -1,18 +1,15 @@
-import os
 import streamlit as st
-from dotenv import load_dotenv
-from rag_pipeline_openai import openai_rag
-from rag_pipeline_gemini import gemini_rag
+import os
 from openai import OpenAI
 import google.generativeai as genai
+from rag_pipeline_openai import openai_rag
+from rag_pipeline_gemini import gemini_rag
 
-# Load API keys from .env
-load_dotenv()
-
+# --- Streamlit Config ---
 st.set_page_config(page_title="PA 211 Disaster AI & RAG Demo", page_icon="📖", layout="wide")
 st.title("📖 PA 211 Disaster AI & RAG Comparison App")
 
-# Toggle for Mode
+# --- Mode Selection ---
 mode = st.selectbox(
     "Choose AI Mode:",
     [
@@ -23,13 +20,14 @@ mode = st.selectbox(
     ]
 )
 
+# --- Input Query ---
 query = st.text_input("Enter your question:")
 
 # --- Direct OpenAI ---
 def openai_direct(query):
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     resp = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model="gpt-4o-mini",  # Small fast model
         messages=[{"role": "user", "content": query}],
         temperature=0.3
     )
@@ -42,10 +40,11 @@ def gemini_direct(query):
     resp = model.generate_content(query)
     return resp.text
 
+# --- Get Answer Button ---
 if st.button("Get Answer"):
     if query.strip():
-        with st.spinner("Generating answer..."):
-            try:
+        try:
+            with st.spinner("Generating answer..."):
                 if mode == "OpenAI (Direct, no RAG)":
                     answer = openai_direct(query)
                 elif mode == "Gemini (Direct, no RAG)":
@@ -55,12 +54,13 @@ if st.button("Get Answer"):
                 elif mode == "Gemini with RAG":
                     answer = gemini_rag(query)
 
-                st.subheader(f"Answer ({mode})")
-                st.write(answer)
+            st.subheader(f"Answer ({mode})")
+            st.write(answer)
 
-            except FileNotFoundError as e:
-                st.error(f"File not found: {e}")
-            except Exception as e:
-                st.error(f"An error occurred: {e}")
+        except FileNotFoundError as e:
+            st.error(f"Error: {e}")
+            st.info("💡 Run `python build_dual_faiss_indexes.py` to build the missing FAISS indexes.")
+        except Exception as e:
+            st.error(f"An unexpected error occurred: {e}")
     else:
         st.warning("Please enter a question.")
