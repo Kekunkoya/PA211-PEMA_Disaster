@@ -1,4 +1,8 @@
-PyMuPDF
+streamlit
+openai
+google-generativeai
+faiss-cpu
+python-dotenv
 numpy
 openai
 requests
