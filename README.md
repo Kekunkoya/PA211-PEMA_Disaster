@@ -1,4 +1,4 @@
-# RAG Streamlit Demo with OpenAI & Gemini Toggle
+# PA 211/PEMA DisasterRAG Streamlit Demo (OpenAI & Gemini Toggle)
 
 This project is a **Retrieval-Augmented Generation (RAG)** demo built with **Streamlit**, allowing you to toggle between **OpenAI GPT models** and **Google Gemini models** for answering questions.
 
