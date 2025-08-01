@@ -1,35 +1,46 @@
+# rag_pipeline_gemini.py
+
 import os
 import pickle
 import faiss
-import streamlit as st
 import google.generativeai as genai
+from langchain_community.vectorstores import FAISS
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-@st.cache_resource
-def load_index(index_path="faiss_index.idx", docstore_path="docstore.pkl"):
+# --- Load Gemini FAISS Index ---
+def load_index():
+    index_path = "faiss_index_gemini.idx"
+    store_path = "docstore_gemini.pkl"
+
+    if not os.path.exists(index_path) or not os.path.exists(store_path):
+        raise FileNotFoundError(f"Missing FAISS index or docstore for Gemini. Please run build_dual_faiss_indexes.py first.")
+
     index = faiss.read_index(index_path)
-    with open(docstore_path, "rb") as f:
+    with open(store_path, "rb") as f:
         docstore = pickle.load(f)
+
     return index, docstore
 
-def retrieve_context(query, index, docstore, top_k=3):
-    # Gemini embeddings
-    embedding = genai.embed_content(
-        model="models/text-embedding-001",
-        content=query
-    )["embedding"]
-
-    scores, ids = index.search([embedding], top_k)
-    return [docstore[i] for i in ids[0]]
-
-def gemini_rag(query):
+# --- Retrieve context from Gemini FAISS ---
+def retrieve_context(query, top_k=3):
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
     index, docstore = load_index()
-    context_chunks = retrieve_context(query, index, docstore)
-    context_text = "\n".join(context_chunks)
+    vectorstore = FAISS(index=index, docstore=docstore, embeddings=embeddings)
 
-    prompt = f"Context:\n{context_text}\n\nQuestion: {query}\nAnswer:"
+    docs = vectorstore.similarity_search(query, k=top_k)
+    return "\n".join([doc.page_content for doc in docs])
+
+# --- Run Gemini RAG ---
+def gemini_rag(query):
+    context = retrieve_context(query)
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel("gemini-2.0-flash")
-    resp = model.generate_content(prompt)
-    return resp.text
+
+    response = model.generate_content(
+        f"Use this context to answer:\n\n{context}\n\nQuestion: {query}"
+    )
+    return response.text
+
 
 
