@@ -1,9 +1,3 @@
-st.set_page_config(
-    page_title="PA 211_PEMA RAG Demo",  # Text in the browser tab
-    page_icon="🏠",               # Emoji or path to an icon file
-    layout="wide"                 # Optional: "centered" or "wide"
-)
-
 streamlit as st
 import os
 import openai
