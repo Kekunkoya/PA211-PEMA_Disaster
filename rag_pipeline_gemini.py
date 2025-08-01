@@ -1,32 +1,34 @@
 import os
 import pickle
 import faiss
+import streamlit as st
 import google.generativeai as genai
-from dotenv import load_dotenv
 
-load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-def load_index(index_path, docstore_path):
+@st.cache_resource
+def load_index(index_path="faiss_index.idx", docstore_path="docstore.pkl"):
     index = faiss.read_index(index_path)
     with open(docstore_path, "rb") as f:
         docstore = pickle.load(f)
     return index, docstore
 
-def retrieve_context(query, index, docstore, k=5):
-    embed_model = "models/text-embedding-001"
+def retrieve_context(query, index, docstore, top_k=3):
+    # Gemini embeddings
     embedding = genai.embed_content(
-        model=embed_model,
+        model="models/text-embedding-001",
         content=query
     )["embedding"]
-    D, I = index.search([embedding], k)
-    return [docstore[i] for i in I[0]]
 
-def generate_answer_gemini(query, index, docstore, retrieval_mode="simple", k=5):
-    context_docs = retrieve_context(query, index, docstore, k)
-    context = "\n\n".join(context_docs)
-    prompt = f"Answer the question based on the context below:\n\nContext:\n{context}\n\nQuestion: {query}"
+    scores, ids = index.search([embedding], top_k)
+    return [docstore[i] for i in ids[0]]
+
+def gemini_rag(query):
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    index, docstore = load_index()
+    context_chunks = retrieve_context(query, index, docstore)
+    context_text = "\n".join(context_chunks)
+
+    prompt = f"Context:\n{context_text}\n\nQuestion: {query}\nAnswer:"
     model = genai.GenerativeModel("gemini-2.0-flash")
     resp = model.generate_content(prompt)
-    return resp.text.strip()
+    return resp.text
 
