@@ -1,0 +1,184 @@
+[
+  {
+    "question": "Where can I find emergency food in ZIP code 17104?",
+    "ideal_answer": "Thanks for reaching out. Based on your ZIP code (17104), here are food resources available near you:\n\n Central Pennsylvania Food Bank\nLocation: 3908 Corey Rd, Harrisburg, PA 17109\nPhone: (717) 564-1700\nServices: Emergency food boxes, drive-thru distribution (Mon–Fri, 9am–3pm)\n\n🍗 St. Francis of Assisi Church Pantry\nAddress: 1439 Market St, Harrisburg, PA 17103\nServices: Walk-in pantry on Wednesdays, 10am–1pm\n\n🗺 You may also qualify for Disaster SNAP benefits (D-SNAP). A 211 Navigator can guide you through the process.\n\n📞 You can always call 2-1-1 or text 898-211 for live assistance.",
+    "reference": "ZIP 17104 - Food Assistance",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "I lost power in 17104. Where can I go to get ice or charge my phone?",
+    "ideal_answer": "Thanks for checking in. If you're in ZIP code 17104 and have lost power:\n\n Ice and bottled water may be distributed through:\n- Giant Food Store, 2300 Linglestown Rd, Harrisburg, PA 17110\n- Contact FirstEnergy at 1-888-544-4877 for updates\n\n🔌 Phone Charging:\nVisit the Harrisburg Mall or the Dauphin County Library (McCormick Riverfront Library).\n\n📞 Need help finding the nearest site open now? Call 2-1-1 or text 898-211 and a navigator can assist you.",
+    "reference": "ZIP 17104 - Power/Utilities",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Is there an emergency shelter near 17104 right now?",
+    "ideal_answer": "If you're in ZIP 17104 and need emergency shelter:\n\n The Salvation Army Harrisburg Capital City Region\nLocation: 506 S 29th St, Harrisburg, PA 17104\nPhone: (717) 233-6755\nServices: Overnight shelter, meals, hygiene support\n\n🚨 During disasters, additional shelters may be opened by Red Cross or PEMA. Dial 2-1-1 to find the closest available shelter now.\n\n🐾 Ask about pet-friendly or ADA-accessible shelters if needed.",
+    "reference": "ZIP 17104 - Shelter",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Where can seniors in 17104 get help with medications or home meals during a storm?",
+    "ideal_answer": "PA 211 can help. For ZIP 17104:\n\n Medication Access:\n- Hamilton Health Center (110 S 17th St) offers pharmacy support.\n- Contact 2-1-1 to be referred to local pharmacies offering emergency refills.\n\n🍽️ Home Meals:\n- Dauphin County Area Agency on Aging provides home-delivered meals for seniors.\n- Meals on Wheels (Harrisburg Chapter) can also deliver if roads are accessible.\n\n📞 Call 2-1-1 or text 898-211 with your ZIP for help now.",
+    "reference": "ZIP 17104 - Senior Support / Healthcare",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "How can I reach someone for water delivery in ZIP 17104?",
+    "ideal_answer": "211 can help with water access if local water service is disrupted:\n\n🚿 Bottled water pickup available at:\n- Farm Show Complex Emergency Distribution, 2300 N Cameron St, Harrisburg, PA 17110\n\n🚚 For those unable to travel:\n- United Way or County VOAD partners may deliver water to seniors, disabled, or medically vulnerable residents. Call 2-1-1 to request delivery.\n\n🗺 Have your ZIP code and reason for need ready when you call.",
+    "reference": "ZIP 17104 - Water Distribution",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "What food programs are available for children after a disaster in 17104?",
+    "ideal_answer": "For ZIP 17104, children can receive meals through:\n\n School District of Harrisburg: Check for emergency meal sites\n Camp Curtin YMCA offers disaster food service for children\n\nCall 2-1-1 or text 898-211 for updated distribution times and locations.",
+    "reference": "ZIP 17104 - Child Nutrition",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Where can I get culturally appropriate food after a disaster in Harrisburg?",
+    "ideal_answer": "211 can connect you to:\n\n Islamic Center of Harrisburg - Halal food pantry (423 S 13th St)\n  World Refugee Pantry, Harrisburg - Culturally inclusive supplies\n\nCall 2-1-1 to ask a navigator for availability today.",
+    "reference": "ZIP 17104 - Cultural Food Assistance",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Is it safe to drink the tap water in 17104 after the flood?",
+    "ideal_answer": "Tap water may be contaminated after a flood. Boil for at least 1 minute or use bottled water.\n\nCall 2-1-1 to find water testing kits or bottled water stations near you.",
+    "reference": "ZIP 17104 - Water Safety",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "What if I need water for medical equipment but have no electricity?",
+    "ideal_answer": "211 can help you find:\n\n Generator-equipped facilities\n Water delivery services coordinated by emergency response teams\n\nThis service is prioritized for people with medical needs. Call or text 2-1-1.",
+    "reference": "ZIP 17104 - Medical Water Support",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Can I bring my pet to a shelter in Harrisburg?",
+    "ideal_answer": "Yes, some shelters allow pets or partner with nearby animal shelters.\n\nCall 2-1-1 to find:\n- Pet-friendly Red Cross shelters\n- Temporary pet boarding options\n\nService animals are always accepted.",
+    "reference": "ZIP 17104 - Pet-Friendly Shelter",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Is there shelter for domestic violence survivors during a disaster?",
+    "ideal_answer": "Yes. In ZIP 17104, call 2-1-1 for referral to:\n\n YWCA Safe Haven - 24/7 secure shelter\n Domestic Violence Hotline: (800) 799-7233\n\nServices include transportation and trauma support.",
+    "reference": "ZIP 17104 - Crisis Shelter",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Where can I get first aid if hospitals are overwhelmed?",
+    "ideal_answer": "Call 2-1-1 to locate:\n\n Mobile medical units (locations rotate daily)\n Urgent care pop-ups coordinated by UPMC/Penn State Health\n\nService available based on your ZIP.",
+    "reference": "ZIP 17104 - First Aid / Urgent Care",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "I lost my insulin during the power outage—can PA 211 help?",
+    "ideal_answer": "Yes. Call 2-1-1 and ask to be connected to:\n\n Emergency pharmacy partners\n Local clinics authorized for prescription replacement (e.g., Hamilton Health Center)\n\nBring your expired bottle or prescription if available.",
+    "reference": "ZIP 17104 - Medication Support",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "What mental health support is available after a disaster in Harrisburg?",
+    "ideal_answer": "You can:\n\n📞 Call SAMHSA’s Disaster Distress Helpline: 1-800-985-5990\n Contact Dauphin County Mental Health Crisis Intervention via PA 211\n\nAll services are free and confidential.",
+    "reference": "ZIP 17104 - Mental Health",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Where can I warm up during a winter blackout in Harrisburg?",
+    "ideal_answer": "Call 2-1-1 or text your ZIP to 898-211 to find:\n\n Heating centers (e.g., John Hall Community Center)\n Transit services for seniors or medically fragile residents\n\nUpdated in real time during emergencies.",
+    "reference": "ZIP 17104 - Heating Center",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Can I access 211 if I don’t have internet or mobile service?",
+    "ideal_answer": "Yes. If you can't call or text:\n\n Use battery-powered radios for alerts\n Visit libraries or shelters where 211 terminals are set up\n\nPA 211 supports multi-modal access during emergencies.",
+    "reference": "ZIP 17104 - Communication Access",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "How can someone in a wheelchair evacuate during a flood in 17104?",
+    "ideal_answer": "Call 2-1-1 and inform them of your location and mobility needs. PA 211 can:\n\n  Coordinate with EMS or Access transportation\n  Refer you to ADA-accessible shelters in Harrisburg\n\nInclude details about equipment or medications when calling.",
+    "reference": "ZIP 17104 - Disability Support / Evacuation",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Where can I get free sandbags or flood protection supplies in Harrisburg?",
+    "ideal_answer": "Call 2-1-1 or check local municipal alerts. Common pickup points include:\n\n Harrisburg Public Works Yard, 1820 Paxton St\n Limited supplies—first-come, first-served basis during flood alerts.",
+    "reference": "ZIP 17104 - Flood Protection",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "What if I need help filing a FEMA disaster claim?",
+    "ideal_answer": "Dial 2-1-1 for referral to:\n\n FEMA application assistance centers (mobile or online)\n Harrisburg Legal Services can help with documentation or appeals.\n\nNavigators may help schedule an in-person appointment.",
+    "reference": "ZIP 17104 - FEMA Claims Assistance",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Can undocumented immigrants receive disaster help in PA?",
+    "ideal_answer": "Yes. Many services coordinated by PA 211 are available regardless of immigration status:\n\n Emergency shelter\n Food pantries\n Call 2-1-1 to be connected to trusted, safe organizations that serve all residents.",
+    "reference": "ZIP 17104 - Inclusive Support",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Is there a place where people with oxygen tanks can recharge safely?",
+    "ideal_answer": "Call 2-1-1 and explain your medical equipment needs. PA 211 can direct you to:\n\n Medical shelters with power backup\n Generator-equipped sites in Dauphin County\n\nBe prepared to give tank size and time since last refill.",
+    "reference": "ZIP 17104 - Medical Power Support",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "How do I report damage to my home after a storm?",
+    "ideal_answer": "Take photos of the damage, then:\n\n Call 2-1-1 for links to local government or FEMA reporting portals\n Navigators can also refer you to housing recovery assistance programs",
+    "reference": "ZIP 17104 - Home Damage Reporting",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Can I get diapers or baby formula during a disaster?",
+    "ideal_answer": "Yes. In ZIP 17104, PA 211 can direct you to:\n\n Capital Area Head Start or WIC offices with emergency formula supplies\n United Way partner diaper banks (updated daily)",
+    "reference": "ZIP 17104 - Infant Care Supplies",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Where can I wash clothes if my utilities are out?",
+    "ideal_answer": "Call 2-1-1 to ask about:\n\n Mobile laundry programs\n Open laundromats near shelters or community centers\n\nSome disaster recovery centers offer free laundry vouchers.",
+    "reference": "ZIP 17104 - Laundry Services",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Where can I store belongings if I’m displaced after a flood?",
+    "ideal_answer": "211 navigators can refer you to:\n\n Local storage units offering discounts for disaster victims\n Churches or shelters that offer temporary item storage\n\nBe sure to ask about rental waivers or aid programs.",
+    "reference": "ZIP 17104 - Storage Assistance",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  },
+  {
+    "question": "Can I volunteer to help others in a disaster?",
+    "ideal_answer": "Yes! Call 2-1-1 or visit the PA VOAD website to sign up for:\n\n Debris removal crews\n Shelter assistance\n Food and supply packaging\n\nTraining and background checks may be required.",
+    "reference": "ZIP 17104 - Volunteer Coordination",
+    "has_answer": true,
+    "reasoning": "This entry was sourced from PA 211's golden dataset and contains complete resource-specific responses."
+  }
+]
