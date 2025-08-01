@@ -4,7 +4,6 @@ google-generativeai
 faiss-cpu
 python-dotenv
 numpy
-openai
 requests
 rank-bm25
 scikit-learn
@@ -12,7 +11,6 @@ networkx
 matplotlib
 tqdm
 Pillow
-faiss-cpu
 pandas
 ipywidgets
 rdflib
@@ -21,5 +19,4 @@ pyvis
 datasets
 transformers
 accelerate
-google-generativeai
-python-dotenv
+
