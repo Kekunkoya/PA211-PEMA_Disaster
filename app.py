@@ -3,7 +3,8 @@ st.set_page_config(
     page_icon="🏠",               # Emoji or path to an icon file
     layout="wide"                 # Optional: "centered" or "wide"
 )
- streamlit as st
+
+streamlit as st
 import os
 import openai
 import google.generativeai as genai
