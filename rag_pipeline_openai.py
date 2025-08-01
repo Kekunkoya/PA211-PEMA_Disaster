@@ -1,50 +1,35 @@
 import os
+import pickle
+import faiss
 from dotenv import load_dotenv
 from openai import OpenAI
-import faiss
-import pickle
 
 load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Load OpenAI API key
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("⚠️ Missing OPENAI_API_KEY in .env")
+def load_index(index_path, docstore_path):
+    index = faiss.read_index(index_path)
+    with open(docstore_path, "rb") as f:
+        docstore = pickle.load(f)
+    return index, docstore
 
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Load FAISS index
-FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH_OPENAI", "faiss_index_openai")
-index = faiss.read_index(os.path.join(FAISS_INDEX_PATH, "index.faiss"))
-
-# Load document mapping
-with open(os.path.join(FAISS_INDEX_PATH, "docs.pkl"), "rb") as f:
-    documents = pickle.load(f)
-
-def retrieve_context(query, k=5):
-    """Retrieve top-k relevant docs for a query."""
-    # Embed query
-    embed = client.embeddings.create(
-        input=query,
-        model="text-embedding-3-small"
+def retrieve_context(query, index, docstore, k=5):
+    from openai import OpenAI
+    embed_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    embedding = embed_client.embeddings.create(
+        model="text-embedding-3-small",
+        input=query
     ).data[0].embedding
+    D, I = index.search([embedding], k)
+    return [docstore[i] for i in I[0]]
 
-    D, I = index.search([embed], k)
-    results = [documents[i] for i in I[0]]
-    return results
-
-def generate_answer(query, k=5):
-    """Generate answer using OpenAI GPT with retrieved context."""
-    context_docs = retrieve_context(query, k)
-    context_text = "\n\n".join(context_docs)
-
-    prompt = f"Answer the following question based on the context:\n\nContext:\n{context_text}\n\nQuestion:\n{query}"
-
-    completion = client.chat.completions.create(
+def generate_answer_openai(query, index, docstore, retrieval_mode="simple", k=5):
+    context_docs = retrieve_context(query, index, docstore, k)
+    context = "\n\n".join(context_docs)
+    prompt = f"Answer the question based on the context below:\n\nContext:\n{context}\n\nQuestion: {query}"
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant using RAG."},
-            {"role": "user", "content": prompt}
-        ]
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0
     )
-    return completion.choices[0].message.content
+    return response.choices[0].message.content.strip()
