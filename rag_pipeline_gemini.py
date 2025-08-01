@@ -32,3 +32,4 @@ def gemini_rag(query):
     resp = model.generate_content(prompt)
     return resp.text
 
+
