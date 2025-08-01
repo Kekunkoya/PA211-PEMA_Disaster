@@ -1,44 +1,32 @@
 import os
-from dotenv import load_dotenv
-import google.generativeai as genai
-import faiss
 import pickle
+import faiss
+import google.generativeai as genai
+from dotenv import load_dotenv
 
 load_dotenv()
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-# Load Gemini API key
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise ValueError("⚠️ Missing GEMINI_API_KEY in .env")
+def load_index(index_path, docstore_path):
+    index = faiss.read_index(index_path)
+    with open(docstore_path, "rb") as f:
+        docstore = pickle.load(f)
+    return index, docstore
 
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Load FAISS index
-FAISS_INDEX_PATH = os.getenv("FAISS_INDEX_PATH_GEMINI", "faiss_index_gemini")
-index = faiss.read_index(os.path.join(FAISS_INDEX_PATH, "index.faiss"))
-
-# Load document mapping
-with open(os.path.join(FAISS_INDEX_PATH, "docs.pkl"), "rb") as f:
-    documents = pickle.load(f)
-
-def retrieve_context(query, k=5):
-    """Retrieve top-k relevant docs for a query."""
-    embed = genai.embed_content(
-        model="models/text-embedding-001",
+def retrieve_context(query, index, docstore, k=5):
+    embed_model = "models/text-embedding-001"
+    embedding = genai.embed_content(
+        model=embed_model,
         content=query
     )["embedding"]
+    D, I = index.search([embedding], k)
+    return [docstore[i] for i in I[0]]
 
-    D, I = index.search([embed], k)
-    results = [documents[i] for i in I[0]]
-    return results
+def generate_answer_gemini(query, index, docstore, retrieval_mode="simple", k=5):
+    context_docs = retrieve_context(query, index, docstore, k)
+    context = "\n\n".join(context_docs)
+    prompt = f"Answer the question based on the context below:\n\nContext:\n{context}\n\nQuestion: {query}"
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    resp = model.generate_content(prompt)
+    return resp.text.strip()
 
-def generate_answer(query, k=5):
-    """Generate answer using Gemini with retrieved context."""
-    context_docs = retrieve_context(query, k)
-    context_text = "\n\n".join(context_docs)
-
-    prompt = f"Answer the following question based on the context:\n\nContext:\n{context_text}\n\nQuestion:\n{query}"
-
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    response = model.generate_content(prompt)
-    return response.text
