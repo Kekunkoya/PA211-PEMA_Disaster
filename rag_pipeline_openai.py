@@ -36,3 +36,4 @@ def openai_rag(query):
     )
     return resp.choices[0].message.content
 
+
