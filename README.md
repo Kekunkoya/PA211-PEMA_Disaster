@@ -13,4 +13,4 @@ This project is a **Retrieval-Augmented Generation (RAG)** demo built with **Str
 
 ---
 
-## Project Structure
+
