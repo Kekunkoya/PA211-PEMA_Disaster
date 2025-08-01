@@ -1,4 +1,4 @@
-fitz
+PyMuPDF
 numpy
 openai
 requests
@@ -17,3 +17,5 @@ pyvis
 datasets
 transformers
 accelerate
+google-generativeai
+python-dotenv
