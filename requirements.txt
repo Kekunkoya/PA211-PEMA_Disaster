@@ -3,3 +3,6 @@ openai
 google-generativeai
 scikit-learn
 numpy
+nltk
+bert-score
+rouge-score
