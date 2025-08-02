@@ -5,10 +5,11 @@ import numpy as np
 import streamlit as st
 from sklearn.metrics.pairwise import cosine_similarity
 
-# --- Lazy imports so we don't crash without API keys ---
+# ----------------------
+# API Lazy Imports
+# ----------------------
 openai = None
 genai = None
-
 
 def ensure_api_key(service_name, key_name):
     api_key = os.getenv(key_name)
@@ -16,13 +17,11 @@ def ensure_api_key(service_name, key_name):
         raise ValueError(f"{service_name} API key is missing. Please enter it in the sidebar.")
     return api_key
 
-
 # ----------------------
-# Embedding Cache Utilities
+# Cache Functions
 # ----------------------
 def cache_path_for_model(model_name):
     return f"{model_name.lower()}_cache.pkl"
-
 
 def load_cache(model_name):
     path = cache_path_for_model(model_name)
@@ -34,7 +33,6 @@ def load_cache(model_name):
             return None
     return None
 
-
 def save_cache(model_name, embeddings, texts):
     path = cache_path_for_model(model_name)
     try:
@@ -43,14 +41,13 @@ def save_cache(model_name, embeddings, texts):
     except Exception as e:
         st.error(f"Failed to save cache for {model_name}: {e}")
 
-
 # ----------------------
 # Config
 # ----------------------
 DATA_FILE = "PA211_dataset.json"
 
 # ----------------------
-# Utility Functions
+# Load Dataset
 # ----------------------
 def load_dataset():
     with open(DATA_FILE, "r", encoding="utf-8") as f:
@@ -58,7 +55,9 @@ def load_dataset():
     texts = [f"{item['question']}\n{item['ideal_answer']}" for item in data]
     return data, texts
 
-
+# ----------------------
+# Embedding Builders
+# ----------------------
 def build_embeddings_openai(texts):
     global openai
     ensure_api_key("OpenAI", "OPENAI_API_KEY")
@@ -73,13 +72,11 @@ def build_embeddings_openai(texts):
             raise RuntimeError(f"OpenAI embedding error: {e}")
     return np.array(embeddings)
 
-
 def build_embeddings_gemini(texts):
-    global genai
     ensure_api_key("Gemini", "GEMINI_API_KEY")
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = "models/text-embedding-004"
+    model = "models/text-embedding-004"  # Gemini embedding model
     embeddings = []
     for txt in texts:
         try:
@@ -89,7 +86,9 @@ def build_embeddings_gemini(texts):
             raise RuntimeError(f"Gemini embedding error: {e}")
     return np.array(embeddings)
 
-
+# ----------------------
+# Retrieval Function
+# ----------------------
 def retrieve(query, embeddings, texts, api_choice):
     if api_choice == "OpenAI":
         q_emb = build_embeddings_openai([query])[0].reshape(1, -1)
@@ -99,16 +98,21 @@ def retrieve(query, embeddings, texts, api_choice):
     ranked_idx = np.argsort(sims)[::-1]
     return ranked_idx, sims
 
-
+# ----------------------
+# Answer Generators
+# ----------------------
 def generate_answer_openai(query, context):
     global openai
     ensure_api_key("OpenAI", "OPENAI_API_KEY")
     from openai import OpenAI
     openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     prompt = f"""Answer the question based on the context below.
+
 Context:
 {context}
+
 Question: {query}
+
 Answer:"""
     try:
         resp = openai.chat.completions.create(
@@ -120,24 +124,24 @@ Answer:"""
     except Exception as e:
         raise RuntimeError(f"OpenAI generation error: {e}")
 
-
 def generate_answer_gemini(query, context):
-    global genai
     ensure_api_key("Gemini", "GEMINI_API_KEY")
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-1.5-pro")  # or "gemini-1.5-flash"
     prompt = f"""Answer the question based on the context below.
+
 Context:
 {context}
+
 Question: {query}
+
 Answer:"""
     try:
         resp = model.generate_content(prompt)
         return resp.text
     except Exception as e:
         raise RuntimeError(f"Gemini generation error: {e}")
-
 
 # ----------------------
 # Streamlit UI
@@ -146,7 +150,7 @@ st.set_page_config(page_title="PA 211 RAG Assistant", layout="centered")
 st.title("PA 211 RAG Assistant")
 st.markdown("Ask questions about PA 211 resources and get answers from OpenAI or Gemini with Retrieval-Augmented Generation.")
 
-# Sidebar for API keys
+# Sidebar API Keys
 st.sidebar.header("API Keys")
 openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
 gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
@@ -159,28 +163,25 @@ if gemini_key:
 api_choice = st.radio("Choose API", ["OpenAI", "Gemini"])
 top_k = st.slider("Number of retrieved documents (Top K)", min_value=1, max_value=10, value=3)
 
-# Load dataset
+# Load data
 data, texts = load_dataset()
 
-# Load or Build Cache
+# Load or build embeddings cache
 cache_data = load_cache(api_choice)
 if cache_data and cache_data.get("texts") == texts:
     embeddings = cache_data["embeddings"]
     st.sidebar.success(f"Loaded cached embeddings for {api_choice}")
 else:
     st.sidebar.info(f"Building embeddings for {api_choice}...")
-    if api_choice == "OpenAI":
-        embeddings = build_embeddings_openai(texts)
-    else:
-        embeddings = build_embeddings_gemini(texts)
+    embeddings = build_embeddings_openai(texts) if api_choice == 'OpenAI' else build_embeddings_gemini(texts)
     save_cache(api_choice, embeddings, texts)
     st.sidebar.success(f"Saved cache for {api_choice}")
 
-# Query
+# Query input
 query = st.text_area("Enter your query")
 if st.button("Get Answer"):
     if embeddings is None:
-        st.error("Please build the embedding cache first.")
+        st.error("Embedding cache not built.")
     else:
         idxs, sims = retrieve(query, embeddings, texts, api_choice)
         top_contexts = [texts[i] for i in idxs[:top_k]]
