@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-import pdfplumber
+import PyPDF2
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
@@ -26,13 +26,13 @@ embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 # --------------- PDF LOADER --------------- #
 def extract_text_from_pdf(uploaded_file):
-    """Extract text from a PDF."""
+    """Extract text from a PDF using PyPDF2."""
     text = ""
-    with pdfplumber.open(uploaded_file) as pdf:
-        for page in pdf.pages:
-            content = page.extract_text()
-            if content:
-                text += content + "\n"
+    pdf_reader = PyPDF2.PdfReader(uploaded_file)
+    for page in pdf_reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text + "\n"
     return text.strip()
 
 # --------------- RETRIEVAL --------------- #
