@@ -1,66 +1,63 @@
+
 import streamlit as st
 import os
-from openai import OpenAI
-import google.generativeai as genai
-from rag_pipeline_openai import openai_rag
-from rag_pipeline_gemini import gemini_rag
+from openai_rag_combined import main as openai_main, build_cache as openai_build_cache
+from gemini_rag_combined import main as gemini_main, build_cache as gemini_build_cache
 
-# --- Streamlit Config ---
-st.set_page_config(page_title="PA 211 Disaster AI & RAG Demo", page_icon="📖", layout="wide")
-st.title("📖 PA 211 Disaster AI & RAG Comparison App")
+# --- Streamlit App ---
+st.set_page_config(page_title="PA 211 RAG Assistant", layout="centered")
 
-# --- Mode Selection ---
-mode = st.selectbox(
-    "Choose AI Mode:",
-    [
-        "OpenAI (Direct, no RAG)",
-        "Gemini (Direct, no RAG)",
-        "OpenAI with RAG",
-        "Gemini with RAG"
-    ]
-)
+st.title("PA 211 RAG Assistant")
+st.markdown("Ask questions about PA 211 resources and get answers from OpenAI or Gemini with retrieval-augmented generation.")
 
-# --- Input Query ---
-query = st.text_input("Enter your question:")
+# API Keys
+st.sidebar.header("API Keys")
+openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
+gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
 
-# --- Direct OpenAI ---
-def openai_direct(query):
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    resp = client.chat.completions.create(
-        model="gpt-4o-mini",  # Small fast model
-        messages=[{"role": "user", "content": query}],
-        temperature=0.3
-    )
-    return resp.choices[0].message.content
+if openai_key:
+    os.environ["OPENAI_API_KEY"] = openai_key
+if gemini_key:
+    os.environ["GEMINI_API_KEY"] = gemini_key
 
-# --- Direct Gemini ---
-def gemini_direct(query):
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    resp = model.generate_content(query)
-    return resp.text
+# Model Selector
+api_choice = st.radio("Choose API", ["OpenAI", "Gemini"])
 
-# --- Get Answer Button ---
+# Retrieval settings
+top_k = st.slider("Number of retrieved documents (Top K)", min_value=1, max_value=10, value=3)
+
+# Cache build button
+if st.button("Build Embedding Cache"):
+    if api_choice == "OpenAI":
+        if not os.getenv("OPENAI_API_KEY"):
+            st.error("Please provide your OpenAI API Key in the sidebar.")
+        else:
+            with st.spinner("Building embedding cache for OpenAI..."):
+                openai_build_cache()
+            st.success("OpenAI embedding cache built successfully!")
+    elif api_choice == "Gemini":
+        if not os.getenv("GEMINI_API_KEY"):
+            st.error("Please provide your Gemini API Key in the sidebar.")
+        else:
+            with st.spinner("Building embedding cache for Gemini..."):
+                gemini_build_cache()
+            st.success("Gemini embedding cache built successfully!")
+
+# Query input
+query = st.text_area("Enter your query")
+
 if st.button("Get Answer"):
-    if query.strip():
-        try:
-            with st.spinner("Generating answer..."):
-                if mode == "OpenAI (Direct, no RAG)":
-                    answer = openai_direct(query)
-                elif mode == "Gemini (Direct, no RAG)":
-                    answer = gemini_direct(query)
-                elif mode == "OpenAI with RAG":
-                    answer = openai_rag(query)
-                elif mode == "Gemini with RAG":
-                    answer = gemini_rag(query)
-
-            st.subheader(f"Answer ({mode})")
-            st.write(answer)
-
-        except FileNotFoundError as e:
-            st.error(f"Error: {e}")
-            st.info("💡 Run `python build_dual_faiss_indexes.py` to build the missing FAISS indexes.")
-        except Exception as e:
-            st.error(f"An unexpected error occurred: {e}")
-    else:
-        st.warning("Please enter a question.")
+    if api_choice == "OpenAI":
+        if not os.getenv("OPENAI_API_KEY"):
+            st.error("Please provide your OpenAI API Key in the sidebar.")
+        else:
+            with st.spinner("Retrieving and generating answer from OpenAI..."):
+                answer = openai_main(query, top_k=top_k)
+                st.success(answer)
+    elif api_choice == "Gemini":
+        if not os.getenv("GEMINI_API_KEY"):
+            st.error("Please provide your Gemini API Key in the sidebar.")
+        else:
+            with st.spinner("Retrieving and generating answer from Gemini..."):
+                answer = gemini_main(query, top_k=top_k)
+                st.success(answer)
