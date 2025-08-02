@@ -1,79 +1,61 @@
+# Let's rewrite rag_eval_app.py with the nltk punkt download at the top and ensure it's self-contained.
 
+rag_eval_app_code = """
 import os
 import json
 import pickle
 import numpy as np
 import streamlit as st
 from sklearn.metrics.pairwise import cosine_similarity
+
 import nltk
+nltk.download('punkt')
+
 from nltk.translate.bleu_score import sentence_bleu
 from bert_score import score as bert_score
-from rouge import Rouge
+from rouge_score import rouge_scorer
 
-# Load dataset
-DATA_FILE = "PA211_dataset.json"
-OPENAI_CACHE_FILE = "openai_embeddings.pkl"
-GEMINI_CACHE_FILE = "gemini_embeddings.pkl"
-
-with open(DATA_FILE, "r", encoding="utf-8") as f:
-    data = json.load(f)
-texts = [f"{item['question']}\n{item['ideal_answer']}" for item in data]
-references = [item["ideal_answer"] for item in data]
-
-# Load cached embeddings
+# Utility functions
 def load_cache(file_path):
     if os.path.exists(file_path):
         with open(file_path, "rb") as f:
             return pickle.load(f)
     return None
 
-openai_embeddings = load_cache(OPENAI_CACHE_FILE)
-gemini_embeddings = load_cache(GEMINI_CACHE_FILE)
+def build_embeddings_openai(texts):
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    embeddings = []
+    for txt in texts:
+        resp = client.embeddings.create(model="text-embedding-3-small", input=txt)
+        embeddings.append(resp.data[0].embedding)
+    return np.array(embeddings)
 
-# Ensure embeddings exist
-if openai_embeddings is None or gemini_embeddings is None:
-    st.error("Embedding cache not found. Please run the main RAG app first to build embeddings.")
-    st.stop()
-
-# API Setup
-from openai import OpenAI
-import google.generativeai as genai
-
-openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
-gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
-if openai_key:
-    os.environ["OPENAI_API_KEY"] = openai_key
-if gemini_key:
-    os.environ["GEMINI_API_KEY"] = gemini_key
-
-# Initialize APIs
-openai_client = None
-if os.getenv("OPENAI_API_KEY"):
-    openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-if os.getenv("GEMINI_API_KEY"):
+def build_embeddings_gemini(texts):
+    import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    model = "models/text-embedding-004"
+    embeddings = []
+    for txt in texts:
+        resp = genai.embed_content(model=model, content=txt)
+        embeddings.append(resp["embedding"])
+    return np.array(embeddings)
 
-# Helper: Build single query embedding
-def build_query_embedding(query, api_choice):
-    if api_choice == "OpenAI":
-        resp = openai_client.embeddings.create(model="text-embedding-3-small", input=query)
-        return np.array(resp.data[0].embedding)
-    else:
-        resp = genai.embed_content(model="models/text-embedding-004", content=query)
-        return np.array(resp["embedding"])
-
-# Retrieval
-def retrieve(query, embeddings):
-    q_emb = query.reshape(1, -1)
+def retrieve(query, embeddings, texts, api_choice):
+    q_emb = build_embeddings_openai([query])[0].reshape(1, -1) if api_choice == "OpenAI" else build_embeddings_gemini([query])[0].reshape(1, -1)
     sims = cosine_similarity(q_emb, embeddings)[0]
     ranked_idx = np.argsort(sims)[::-1]
     return ranked_idx, sims
 
-# Generation
 def generate_answer_openai(query, context):
-    prompt = f"Answer the question based on the context below.\nContext:\n{context}\nQuestion: {query}\nAnswer:"
-    resp = openai_client.chat.completions.create(
+    from openai import OpenAI
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    prompt = f\"\"\"Answer the question based on the context below.
+Context:
+{context}
+Question: {query}
+Answer:\"\"\"
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
@@ -81,66 +63,72 @@ def generate_answer_openai(query, context):
     return resp.choices[0].message.content
 
 def generate_answer_gemini(query, context):
+    import google.generativeai as genai
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel("gemini-1.5-flash")
-    prompt = f"Answer the question based on the context below.\nContext:\n{context}\nQuestion: {query}\nAnswer:"
+    prompt = f\"\"\"Answer the question based on the context below.
+Context:
+{context}
+Question: {query}
+Answer:\"\"\"
     resp = model.generate_content(prompt)
     return resp.text
 
-# Evaluation
+# Evaluation metrics
 def evaluate_metrics(reference, candidate):
-    # BLEU
     bleu = sentence_bleu([reference.split()], candidate.split())
-    # BERTScore
-    P, R, F1 = bert_score([candidate], [reference], lang="en", verbose=False)
-    # ROUGE-L
-    rouge = Rouge()
-    rouge_scores = rouge.get_scores(candidate, reference)[0]["rouge-l"]["f"]
-    return {
-        "BLEU": round(bleu, 3),
-        "BERTScore_F1": round(F1.mean().item(), 3),
-        "ROUGE-L_F": round(rouge_scores, 3)
-    }
+    P, R, F1 = bert_score([candidate], [reference], lang="en", rescale_with_baseline=True)
+    rouge = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True).score(reference, candidate)
+    return bleu, float(P[0]), float(R[0]), float(F1[0]), rouge['rougeL'].fmeasure
 
 # Streamlit UI
-st.set_page_config(page_title="RAG Evaluation", layout="wide")
-st.title("RAG Evaluation App (OpenAI vs Gemini)")
-st.markdown("This app compares OpenAI and Gemini RAG answers using BLEU, BERTScore, and ROUGE-L.")
+st.title("RAG Evaluation App")
+st.sidebar.header("API Keys")
+openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
+gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
+if openai_key:
+    os.environ["OPENAI_API_KEY"] = openai_key
+if gemini_key:
+    os.environ["GEMINI_API_KEY"] = gemini_key
 
-query = st.text_area("Enter your query")
+DATA_FILE = "PA211_dataset.json"
+with open(DATA_FILE, "r", encoding="utf-8") as f:
+    data = json.load(f)
+texts = [f"{item['question']}\n{item['ideal_answer']}" for item in data]
+
+# Build or load embeddings
+openai_embeddings = load_cache("openai_embeddings.pkl") or build_embeddings_openai(texts)
+gemini_embeddings = load_cache("gemini_embeddings.pkl") or build_embeddings_gemini(texts)
+
+query = st.text_area("Enter a query for evaluation")
+top_k = st.slider("Number of retrieved docs", 1, 5, 3)
 
 if st.button("Evaluate"):
-    if not query.strip():
-        st.error("Please enter a query.")
-        st.stop()
+    idxs_oai, _ = retrieve(query, openai_embeddings, texts, "OpenAI")
+    idxs_gem, _ = retrieve(query, gemini_embeddings, texts, "Gemini")
 
-    # Retrieve top-3 for each
-    q_openai = build_query_embedding(query, "OpenAI")
-    idxs_o, _ = retrieve(q_openai, openai_embeddings)
-    context_o = "\n\n".join([texts[i] for i in idxs_o[:3]])
+    ctx_oai = "\\n\\n".join([texts[i] for i in idxs_oai[:top_k]])
+    ctx_gem = "\\n\\n".join([texts[i] for i in idxs_gem[:top_k]])
 
-    q_gemini = build_query_embedding(query, "Gemini")
-    idxs_g, _ = retrieve(q_gemini, gemini_embeddings)
-    context_g = "\n\n".join([texts[i] for i in idxs_g[:3]])
+    ans_oai = generate_answer_openai(query, ctx_oai)
+    ans_gem = generate_answer_gemini(query, ctx_gem)
 
-    # Generate answers
-    ans_openai = generate_answer_openai(query, context_o)
-    ans_gemini = generate_answer_gemini(query, context_g)
+    reference = data[idxs_oai[0]]["ideal_answer"]
 
-    # Reference answer
-    ref_answer = references[idxs_o[0]]
+    bleu_o, P_o, R_o, F1_o, rouge_o = evaluate_metrics(reference, ans_oai)
+    bleu_g, P_g, R_g, F1_g, rouge_g = evaluate_metrics(reference, ans_gem)
 
-    # Evaluate
-    eval_openai = evaluate_metrics(ref_answer, ans_openai)
-    eval_gemini = evaluate_metrics(ref_answer, ans_gemini)
+    st.subheader("OpenAI Answer")
+    st.write(ans_oai)
+    st.write(f"BLEU: {bleu_o:.4f}, BERT-P: {P_o:.4f}, BERT-R: {R_o:.4f}, BERT-F1: {F1_o:.4f}, ROUGE-L: {rouge_o:.4f}")
 
-    # Display
-    st.subheader("Results")
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**OpenAI Answer:**")
-        st.write(ans_openai)
-        st.write("**Scores:**", eval_openai)
-    with col2:
-        st.markdown("**Gemini Answer:**")
-        st.write(ans_gemini)
-        st.write("**Scores:**", eval_gemini)
+    st.subheader("Gemini Answer")
+    st.write(ans_gem)
+    st.write(f"BLEU: {bleu_g:.4f}, BERT-P: {P_g:.4f}, BERT-R: {R_g:.4f}, BERT-F1: {F1_g:.4f}, ROUGE-L: {rouge_g:.4f}")
+"""
+
+# Save this file for the user
+with open("/mnt/data/rag_eval_app_fixed.py", "w") as f:
+    f.write(rag_eval_app_code)
+
+"/mnt/data/rag_eval_app_fixed.py"
