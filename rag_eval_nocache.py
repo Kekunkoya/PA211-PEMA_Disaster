@@ -1,76 +1,68 @@
-import os
 import streamlit as st
-from PyPDF2 import PdfReader
-from openai import OpenAI
+import os
+import tempfile
+import fitz  # PyMuPDF
 import numpy as np
-from bert_score import score as bert_score
+from sentence_transformers import SentenceTransformer, util
+from openai import OpenAI
+import google.generativeai as genai
 
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+# ====== SETUP ======
+openai_api_key = st.secrets.get("OPENAI_API_KEY", None)
+gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
 
-# --- Build embeddings using OpenAI ---
-def build_embeddings_openai(texts):
-    response = client.embeddings.create(
-        input=texts,
-        model="text-embedding-3-small"
-    )
-    return [np.array(e.embedding) for e in response.data]
+if not openai_api_key or not gemini_api_key:
+    st.error("Please set your OPENAI_API_KEY and GEMINI_API_KEY in Streamlit secrets.")
+    st.stop()
 
-# --- Cosine similarity ---
-def cosine_similarity(a, b):
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+client = OpenAI(api_key=openai_api_key)
+genai.configure(api_key=gemini_api_key)
 
-# --- PDF text extraction ---
-def load_pdfs(uploaded_files):
-    docs = []
-    for file in uploaded_files:
-        pdf = PdfReader(file)
-        text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
-        docs.append(text)
-    return docs
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-# --- Streamlit App ---
-st.title("RAG Evaluation (No Cache)")
+# ====== FUNCTIONS ======
+def extract_text_from_pdfs(uploaded_files):
+    text = ""
+    for uploaded_file in uploaded_files:
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            tmp_file.write(uploaded_file.read())
+            tmp_path = tmp_file.name
+        pdf_doc = fitz.open(tmp_path)
+        for page in pdf_doc:
+            text += page.get_text("text") + "\n"
+        pdf_doc.close()
+        os.remove(tmp_path)
+    return text.strip()
 
-uploaded_files = st.file_uploader("Upload PDF files", accept_multiple_files=True, type=["pdf"])
-query = st.text_input("Enter your query")
-top_k = st.number_input("Top K results", min_value=1, max_value=5, value=1)
+def chunk_text(text, chunk_size=500, overlap=50):
+    words = text.split()
+    chunks = []
+    for i in range(0, len(words), chunk_size - overlap):
+        chunk = " ".join(words[i:i + chunk_size])
+        chunks.append(chunk)
+    return chunks
 
-if uploaded_files and query:
-    # Load documents
-    docs = load_pdfs(uploaded_files)
-    
-    # Get embeddings
-    doc_embeddings = build_embeddings_openai(docs)
-    query_embedding = build_embeddings_openai([query])[0]
-    
-    # Calculate similarities
-    sims = [cosine_similarity(query_embedding, d) for d in doc_embeddings]
-    
-    # Get Top K docs
-    top_indices = np.argsort(sims)[-top_k:][::-1]
-    top_docs = [docs[i] for i in top_indices]
-    
-    st.subheader("Top Retrieved Document(s)")
-    for i, doc in enumerate(top_docs):
-        st.markdown(f"**Document {i+1} (Score: {sims[top_indices[i]]:.4f})**")
-        st.write(doc[:1000] + "...")  # Show first 1000 chars
-    
-    # --- LLM Generation ---
-    completion = client.chat.completions.create(
+def retrieve_top_k(query, docs, k=1):
+    doc_embeddings = embedder.encode(docs, convert_to_tensor=True)
+    query_embedding = embedder.encode([query], convert_to_tensor=True)
+    cos_scores = util.pytorch_cos_sim(query_embedding, doc_embeddings)[0]
+    top_results = np.argsort(-cos_scores)[:k]
+    return [(docs[idx], float(cos_scores[idx])) for idx in top_results]
+
+def generate_openai_answer(query, context):
+    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer concisely:"
+    response = client.chat.completions.create(
         model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that answers based on retrieved documents."},
-            {"role": "user", "content": f"Query: {query}\nContext: {top_docs[0]}"}
-        ]
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0
     )
-    answer = completion.choices[0].message.content
-    st.subheader("Generated Answer")
-    st.write(answer)
-    
-    # --- BERTScore Evaluation ---
-    P, R, F1 = bert_score([answer], [top_docs[0]], lang="en", verbose=False)
-    st.subheader("Evaluation Metrics (BERTScore)")
-    st.write(f"Precision: {P.mean().item():.4f}")
-    st.write(f"Recall: {R.mean().item():.4f}")
-    st.write(f"F1 Score: {F1.mean().item():.4f}")
+    return response.choices[0].message.content.strip()
+
+def generate_gemini_answer(query, context):
+    model = genai.GenerativeModel("gemini-pro")
+    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer concisely:"
+    response = model.generate_content(prompt)
+    return response.text.strip()
+
+# ====== STREAMLIT UI ======
+st.title("
