@@ -1,7 +1,8 @@
-import streamlit as st
 import os
-import tempfile
-import fitz  # PyMuPDF
+import streamlit as st
+import openai
+import numpy as np
+from PyPDF2 import PdfReader  # Replacing fitz
 from sentence_transformers import SentenceTransformer, util
 from bert_score import score as bert_score
 import openai
