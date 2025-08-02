@@ -1,191 +1,108 @@
 import os
-import json
 import pickle
-import numpy as np
 import streamlit as st
-from sklearn.metrics.pairwise import cosine_similarity
+from dotenv import load_dotenv
+from openai import OpenAI
+import google.generativeai as genai
+from langchain_community.vectorstores import FAISS
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.docstore.document import Document
+from PyPDF2 import PdfReader
 
-# ----------------------
-# Utility: Ensure API Key Exists
-# ----------------------
-def ensure_api_key(service_name, key_name):
-    api_key = os.getenv(key_name)
-    if not api_key:
-        raise ValueError(f"{service_name} API key is missing. Please enter it in the sidebar.")
-    return api_key
+# Load environment variables
+load_dotenv()
 
-# ----------------------
-# Embedding Cache Utilities
-# ----------------------
-def cache_path_for_model(model_name):
-    return f"{model_name.lower()}_cache.pkl"
+# API keys
+openai_api_key = os.getenv("OPENAI_API_KEY")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-def load_cache(model_name):
-    path = cache_path_for_model(model_name)
-    if os.path.exists(path):
-        try:
-            with open(path, "rb") as f:
-                return pickle.load(f)
-        except Exception:
-            return None
-    return None
+if not openai_api_key:
+    st.warning("⚠️ OPENAI_API_KEY not set.")
+if not gemini_api_key:
+    st.warning("⚠️ GEMINI_API_KEY not set.")
 
-def save_cache(model_name, embeddings, texts):
-    path = cache_path_for_model(model_name)
-    try:
-        with open(path, "wb") as f:
-            pickle.dump({"embeddings": embeddings, "texts": texts}, f)
-    except Exception as e:
-        st.error(f"Failed to save cache for {model_name}: {e}")
+# Initialize clients
+openai_client = OpenAI(api_key=openai_api_key)
+genai.configure(api_key=gemini_api_key)
 
-# ----------------------
-# Config
-# ----------------------
-DATA_FILE = "PA211_dataset.json"
+# --------------------------
+# UTILS
+# --------------------------
+def load_pdf_text(pdf_file):
+    reader = PdfReader(pdf_file)
+    return "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
 
-# ----------------------
-# Dataset Loader
-# ----------------------
-def load_dataset():
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    texts = [f"{item['question']}\n{item['ideal_answer']}" for item in data]
-    return data, texts
+def split_text_into_chunks(text, chunk_size=1000, chunk_overlap=200):
+    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    return splitter.split_text(text)
 
-# ----------------------
-# Embedding Builders
-# ----------------------
+def save_embeddings_cache(embeddings, filename):
+    """Save embeddings to a pickle file for reuse."""
+    with open(filename, "wb") as f:
+        pickle.dump(embeddings, f)
+
 def build_embeddings_openai(texts):
-    ensure_api_key("OpenAI", "OPENAI_API_KEY")
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    embeddings = []
-    for txt in texts:
-        try:
-            truncated_txt = txt[:3000]
-            resp = client.embeddings.create(model="text-embedding-3-small", input=truncated_txt)
-            embeddings.append(resp.data[0].embedding)
-        except Exception as e:
-            st.error(f"OpenAI embedding error: {e}")
-            raise RuntimeError(f"OpenAI embedding error: {e}")
-    return np.array(embeddings)
+    try:
+        response = openai_client.embeddings.create(model="text-embedding-3-small", input=texts)
+        embeddings = [item.embedding for item in response.data]
+        return embeddings
+    except Exception as e:
+        raise RuntimeError(f"OpenAI embedding error: {e}")
 
 def build_embeddings_gemini(texts):
-    ensure_api_key("Gemini", "GEMINI_API_KEY")
-    import google.generativeai as genai
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = "models/embedding-001"  # Stable Gemini embedding model
-    embeddings = []
-    for txt in texts:
-        try:
-            truncated_txt = txt[:3000]  # Prevent token overflow
-            resp = genai.embed_content(model=model, content=truncated_txt)
-            embeddings.append(resp["embedding"])
-        except Exception as e:
-            st.error(f"Gemini embedding error for: {txt[:50]}... — {e}")
-            raise RuntimeError(f"Gemini embedding error: {e}")
-    return np.array(embeddings)
-
-# ----------------------
-# Retrieval
-# ----------------------
-def retrieve(query, embeddings, texts, api_choice):
-    if api_choice == "OpenAI":
-        q_emb = build_embeddings_openai([query])[0].reshape(1, -1)
-    else:
-        q_emb = build_embeddings_gemini([query])[0].reshape(1, -1)
-    sims = cosine_similarity(q_emb, embeddings)[0]
-    ranked_idx = np.argsort(sims)[::-1]
-    return ranked_idx, sims
-
-# ----------------------
-# Answer Generation
-# ----------------------
-def generate_answer_openai(query, context):
-    ensure_api_key("OpenAI", "OPENAI_API_KEY")
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    prompt = f"""Answer the question based on the context below.
-Context:
-{context}
-Question: {query}
-Answer:"""
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-        return resp.choices[0].message.content
+        model = genai.GenerativeModel("models/text-embedding-004")  # Gemini 1.5 embedding model
+        embeddings = [model.embed_content(content=text)["embedding"] for text in texts]
+        return embeddings
     except Exception as e:
-        st.error(f"OpenAI generation error: {e}")
-        raise RuntimeError(f"OpenAI generation error: {e}")
+        raise RuntimeError(f"Gemini embedding error: {e}")
 
-def generate_answer_gemini(query, context):
-    ensure_api_key("Gemini", "GEMINI_API_KEY")
-    import google.generativeai as genai
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-2.0-flash")
-    prompt = f"""Answer the question based on the context below.
-Context:
-{context}
-Question: {query}
-Answer:"""
-    try:
-        resp = model.generate_content(prompt)
-        return resp.text
-    except Exception as e:
-        st.error(f"Gemini generation error: {e}")
-        raise RuntimeError(f"Gemini generation error: {e}")
+def create_vectorstore(chunks, embeddings, api_choice):
+    documents = [Document(page_content=chunk) for chunk in chunks]
+    vectorstore = FAISS.from_embeddings(list(zip(documents, embeddings)))
+    vectorstore.save_local(f"faiss_index_{api_choice.lower()}")
+    return vectorstore
 
-# ----------------------
-# Streamlit UI
-# ----------------------
-st.set_page_config(page_title="PA 211 RAG Assistant", layout="centered")
-st.title("PA 211 RAG Assistant")
-st.markdown("Ask questions about PA 211 resources and get answers from OpenAI or Gemini with Retrieval-Augmented Generation.")
+# --------------------------
+# STREAMLIT APP
+# --------------------------
+st.title("📄 PA 211 RAG App with OpenAI & Gemini")
+st.write("Upload a PDF, choose your embedding API, and run RAG.")
 
-# Sidebar for API keys
-st.sidebar.header("API Keys")
-openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
-gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
-if openai_key:
-    os.environ["OPENAI_API_KEY"] = openai_key
-if gemini_key:
-    os.environ["GEMINI_API_KEY"] = gemini_key
+# Sidebar options
+api_choice = st.sidebar.radio("Choose API for embeddings:", ["OpenAI", "Gemini"])
 
-# API choice
-api_choice = st.radio("Choose API", ["OpenAI", "Gemini"])
-top_k = st.slider("Number of retrieved documents (Top K)", min_value=1, max_value=10, value=3)
+uploaded_pdf = st.file_uploader("Upload a PDF document", type=["pdf"])
+query = st.text_input("Enter your question:")
 
-# Load dataset
-data, texts = load_dataset()
+if uploaded_pdf:
+    with st.spinner("Reading and splitting PDF..."):
+        text = load_pdf_text(uploaded_pdf)
+        chunks = split_text_into_chunks(text)
 
-# Load or Build cache
-cache_data = load_cache(api_choice)
-if cache_data and cache_data.get("texts") == texts:
-    embeddings = cache_data["embeddings"]
-    st.sidebar.success(f"Loaded cached embeddings for {api_choice}")
-else:
-    st.sidebar.info(f"Building embeddings for {api_choice}...")
-    embeddings = build_embeddings_openai(texts) if api_choice == "OpenAI" else build_embeddings_gemini(texts)
-    save_cache(api_choice, embeddings, texts)
-    st.sidebar.success(f"Saved cache for {api_choice}")
+    if st.button("Generate Embeddings & Save Cache"):
+        with st.spinner(f"Generating {api_choice} embeddings..."):
+            if api_choice == "OpenAI":
+                embeddings = build_embeddings_openai(chunks)
+                save_embeddings_cache(embeddings, "openai_cache.pkl")
+            else:
+                embeddings = build_embeddings_gemini(chunks)
+                save_embeddings_cache(embeddings, "gemini_cache.pkl")
 
-# Query
-query = st.text_area("Enter your query")
-if st.button("Get Answer"):
-    if embeddings is None:
-        st.error("Please build the embedding cache first.")
-    else:
-        idxs, sims = retrieve(query, embeddings, texts, api_choice)
-        top_contexts = [texts[i] for i in idxs[:top_k]]
-        context_str = "\n\n".join(top_contexts)
+            st.success(f"{api_choice} embeddings created and cached.")
+            create_vectorstore(chunks, embeddings, api_choice)
 
-        if api_choice == "OpenAI":
-            answer = generate_answer_openai(query, context_str)
+# --------------------------
+# RAG Search
+# --------------------------
+if query:
+    with st.spinner("Searching vectorstore..."):
+        index_path = f"faiss_index_{api_choice.lower()}"
+        if os.path.exists(index_path):
+            vectorstore = FAISS.load_local(index_path, embeddings=None, allow_dangerous_deserialization=True)
+            docs = vectorstore.similarity_search(query, k=3)
+            st.subheader("Top Retrieved Chunks")
+            for i, doc in enumerate(docs, start=1):
+                st.markdown(f"**Result {i}:** {doc.page_content}")
         else:
-            answer = generate_answer_gemini(query, context_str)
-
-        st.markdown("### Answer")
-        st.write(answer)
+            st.error("No FAISS index found. Please generate embeddings first.")
