@@ -1,4 +1,3 @@
-
 import os
 import json
 import pickle
@@ -18,14 +17,12 @@ def ensure_api_key(service_name, key_name):
     return api_key
 
 
-
 # ----------------------
 # Embedding Cache Utilities
 # ----------------------
-import pickle
-
 def cache_path_for_model(model_name):
     return f"{model_name.lower()}_cache.pkl"
+
 
 def load_cache(model_name):
     path = cache_path_for_model(model_name)
@@ -36,6 +33,7 @@ def load_cache(model_name):
         except Exception:
             return None
     return None
+
 
 def save_cache(model_name, embeddings, texts):
     path = cache_path_for_model(model_name)
@@ -50,8 +48,6 @@ def save_cache(model_name, embeddings, texts):
 # Config
 # ----------------------
 DATA_FILE = "PA211_dataset.json"
-OPENAI_CACHE_FILE = "openai_embeddings.pkl"
-GEMINI_CACHE_FILE = "gemini_embeddings.pkl"
 
 # ----------------------
 # Utility Functions
@@ -61,6 +57,7 @@ def load_dataset():
         data = json.load(f)
     texts = [f"{item['question']}\n{item['ideal_answer']}" for item in data]
     return data, texts
+
 
 def build_embeddings_openai(texts):
     global openai
@@ -75,6 +72,7 @@ def build_embeddings_openai(texts):
         except Exception as e:
             raise RuntimeError(f"OpenAI embedding error: {e}")
     return np.array(embeddings)
+
 
 def build_embeddings_gemini(texts):
     global genai
@@ -91,15 +89,6 @@ def build_embeddings_gemini(texts):
             raise RuntimeError(f"Gemini embedding error: {e}")
     return np.array(embeddings)
 
-def save_cache(file_path, embeddings):
-    with open(file_path, "wb") as f:
-        pickle.dump(embeddings, f)
-
-def load_cache(file_path):
-    if os.path.exists(file_path):
-        with open(file_path, "rb") as f:
-            return pickle.load(f)
-    return None
 
 def retrieve(query, embeddings, texts, api_choice):
     if api_choice == "OpenAI":
@@ -109,6 +98,7 @@ def retrieve(query, embeddings, texts, api_choice):
     sims = cosine_similarity(q_emb, embeddings)[0]
     ranked_idx = np.argsort(sims)[::-1]
     return ranked_idx, sims
+
 
 def generate_answer_openai(query, context):
     global openai
@@ -129,8 +119,7 @@ Answer:"""
         return resp.choices[0].message.content
     except Exception as e:
         raise RuntimeError(f"OpenAI generation error: {e}")
-    except Exception as e:
-        raise RuntimeError(f"OpenAI generation error: {e}")
+
 
 def generate_answer_gemini(query, context):
     global genai
@@ -148,8 +137,7 @@ Answer:"""
         return resp.text
     except Exception as e:
         raise RuntimeError(f"Gemini generation error: {e}")
-    except Exception as e:
-        raise RuntimeError(f"Gemini generation error: {e}")
+
 
 # ----------------------
 # Streamlit UI
@@ -174,29 +162,19 @@ top_k = st.slider("Number of retrieved documents (Top K)", min_value=1, max_valu
 # Load dataset
 data, texts = load_dataset()
 
-# Build/Load cache
-if api_choice == "OpenAI":
-    cache_file = OPENAI_CACHE_FILE
-else:
-    cache_file = GEMINI_CACHE_FILE
-
-embeddings = load_cache(cache_file)
-if embeddings is None and st.button("Build Embedding Cache"):
-    with st.spinner(f"Building embeddings for {api_choice}..."):
-        if api_choice == "OpenAI":
-            cache_data = load_cache(model_choice)
+# Load or Build Cache
+cache_data = load_cache(api_choice)
 if cache_data and cache_data.get("texts") == texts:
     embeddings = cache_data["embeddings"]
-    st.sidebar.success(f"Loaded cached embeddings for {model_choice}")
+    st.sidebar.success(f"Loaded cached embeddings for {api_choice}")
 else:
-    st.sidebar.info(f"Building embeddings for {model_choice}...")
-    embeddings = build_embeddings_openai(texts) if model_choice == 'OpenAI' else build_embeddings_gemini(texts)
-    save_cache(model_choice, embeddings, texts)
-    st.sidebar.success(f"Saved cache for {model_choice}")
-        else:
-            embeddings = build_embeddings_gemini(texts)
-        save_cache(cache_file, embeddings)
-    st.success(f"{api_choice} embeddings built and cached successfully!")
+    st.sidebar.info(f"Building embeddings for {api_choice}...")
+    if api_choice == "OpenAI":
+        embeddings = build_embeddings_openai(texts)
+    else:
+        embeddings = build_embeddings_gemini(texts)
+    save_cache(api_choice, embeddings, texts)
+    st.sidebar.success(f"Saved cache for {api_choice}")
 
 # Query
 query = st.text_area("Enter your query")
