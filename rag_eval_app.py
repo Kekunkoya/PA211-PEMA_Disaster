@@ -1,155 +1,103 @@
-import os
-import json
-import pickle
-import numpy as np
 import streamlit as st
+import os
+import pdfplumber
+import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-from nltk.translate.bleu_score import sentence_bleu, SmoothingFunction
-from bert_score import score as bert_score
+from sentence_transformers import SentenceTransformer
+from openai import OpenAI
+import google.generativeai as genai
 
-# ----------------------
-# Config
-# ----------------------
-DATA_FILE = "PA211_dataset.json"
-OPENAI_CACHE_FILE = "openai_embeddings.pkl"
-GEMINI_CACHE_FILE = "gemini_embeddings.pkl"
+# ---------------- CONFIG ---------------- #
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-# ----------------------
-# Load Dataset
-# ----------------------
-def load_dataset():
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    texts = [f"{item['question']}\n{item['ideal_answer']}" for item in data]
-    return data, texts
+if not OPENAI_API_KEY:
+    st.error("Please set your OPENAI_API_KEY in environment variables.")
+if not GOOGLE_API_KEY:
+    st.error("Please set your GOOGLE_API_KEY in environment variables.")
 
-# ----------------------
-# Load Cache
-# ----------------------
-def load_cache(file_path):
-    if os.path.exists(file_path):
-        with open(file_path, "rb") as f:
-            return pickle.load(f)
-    return None
+# Initialize clients
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
+genai.configure(api_key=GOOGLE_API_KEY)
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
-# ----------------------
-# Retrieval
-# ----------------------
-def retrieve(query_emb, embeddings, texts, top_k=3):
-    sims = cosine_similarity(query_emb.reshape(1, -1), embeddings)[0]
-    ranked_idx = np.argsort(sims)[::-1]
-    return [(texts[i], sims[i]) for i in ranked_idx[:top_k]]
+# Embedding model
+embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-# ----------------------
-# Build Query Embedding
-# ----------------------
-def build_query_embedding_openai(query):
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    resp = client.embeddings.create(model="text-embedding-3-small", input=query)
-    return np.array(resp.data[0].embedding)
+# --------------- PDF LOADER --------------- #
+def extract_text_from_pdf(uploaded_file):
+    """Extract text from a PDF."""
+    text = ""
+    with pdfplumber.open(uploaded_file) as pdf:
+        for page in pdf.pages:
+            content = page.extract_text()
+            if content:
+                text += content + "\n"
+    return text.strip()
 
-def build_query_embedding_gemini(query):
-    import google.generativeai as genai
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = "models/text-embedding-004"
-    resp = genai.embed_content(model=model, content=query)
-    return np.array(resp["embedding"])
+# --------------- RETRIEVAL --------------- #
+def retrieve_top_k(query, docs, k=1):
+    """Retrieve top-k most relevant chunks from docs."""
+    doc_embeddings = embedder.encode(docs)
+    query_embedding = embedder.encode([query])
+    similarities = cosine_similarity(query_embedding, doc_embeddings)[0]
+    top_indices = np.argsort(similarities)[-k:][::-1]
+    return [docs[i] for i in top_indices]
 
-# ----------------------
-# Generate Answer
-# ----------------------
-def generate_openai(query, context):
-    from openai import OpenAI
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    prompt = f"Answer based on the context:\n\n{context}\n\nQuestion: {query}\nAnswer:"
-    resp = client.chat.completions.create(
+# --------------- LLM GENERATION --------------- #
+def generate_openai_answer(query, context):
+    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
+    response = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
-    return resp.choices[0].message.content.strip()
+    return response.choices[0].message.content.strip()
 
-def generate_gemini(query, context):
-    import google.generativeai as genai
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-1.5-flash")
-    prompt = f"Answer based on the context:\n\n{context}\n\nQuestion: {query}\nAnswer:"
-    resp = model.generate_content(prompt)
-    return resp.text.strip()
+def generate_gemini_answer(query, context):
+    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
+    response = gemini_model.generate_content(prompt)
+    return response.text.strip()
 
-# ----------------------
-# Evaluation Metrics
-# ----------------------
-def evaluate_responses(reference, candidate):
-    smoothie = SmoothingFunction().method4
-    bleu = sentence_bleu([reference.split()], candidate.split(), smoothing_function=smoothie)
+# --------------- COSINE SIMILARITY --------------- #
+def compute_cosine_similarity(text1, text2):
+    emb = embedder.encode([text1, text2])
+    return cosine_similarity([emb[0]], [emb[1]])[0][0]
 
-    # Force BERTScore to run on CPU to avoid GPU errors on Streamlit Cloud
-    P, R, F1 = bert_score([candidate], [reference], lang="en", verbose=False, device="cpu", model_type="microsoft/deberta-base-mnli")
-    return bleu, float(P[0]), float(R[0]), float(F1[0])
+# --------------- STREAMLIT APP --------------- #
+st.title("📄 RAG Evaluation – OpenAI vs Gemini (Standalone, No Cache)")
 
-# ----------------------
-# Streamlit UI
-# ----------------------
-st.set_page_config(page_title="RAG Evaluation - OpenAI vs Gemini", layout="wide")
-st.title("RAG Evaluation: OpenAI vs Gemini")
+uploaded_pdf = st.file_uploader("Upload a PDF", type=["pdf"])
+query = st.text_input("Enter your query:")
+reference_answer = st.text_area("Enter reference answer (optional for scoring):")
 
-st.sidebar.header("API Keys")
-openai_key = st.sidebar.text_input("OpenAI API Key", type="password")
-gemini_key = st.sidebar.text_input("Gemini API Key", type="password")
-if openai_key:
-    os.environ["OPENAI_API_KEY"] = openai_key
-if gemini_key:
-    os.environ["GEMINI_API_KEY"] = gemini_key
+if uploaded_pdf and query:
+    with st.spinner("Extracting PDF text..."):
+        pdf_text = extract_text_from_pdf(uploaded_pdf)
+        docs = pdf_text.split("\n\n")  # split into paragraphs
 
-top_k = st.sidebar.slider("Number of retrieved documents", 1, 5, 3)
+    with st.spinner("Retrieving context..."):
+        top_context = " ".join(retrieve_top_k(query, docs, k=1))
 
-# Load data
-data, texts = load_dataset()
-openai_cache = load_cache(OPENAI_CACHE_FILE)
-gemini_cache = load_cache(GEMINI_CACHE_FILE)
+    with st.spinner("Generating answers..."):
+        openai_answer = generate_openai_answer(query, top_context)
+        gemini_answer = generate_gemini_answer(query, top_context)
 
-if openai_cache is None or gemini_cache is None:
-    st.error("Embedding caches missing! Please run the main RAG app first.")
-    st.stop()
+    st.subheader("📌 Retrieved Context")
+    st.write(top_context)
 
-query = st.text_area("Enter your query")
-if st.button("Run Evaluation"):
-    if not query.strip():
-        st.error("Please enter a query.")
-        st.stop()
+    st.subheader("🤖 OpenAI Answer")
+    st.write(openai_answer)
 
-    # Build embeddings for query
-    q_emb_openai = build_query_embedding_openai(query)
-    q_emb_gemini = build_query_embedding_gemini(query)
+    st.subheader("🪐 Gemini Answer")
+    st.write(gemini_answer)
 
-    # Retrieve top docs
-    top_docs_openai = retrieve(q_emb_openai, openai_cache, texts, top_k)
-    top_docs_gemini = retrieve(q_emb_gemini, gemini_cache, texts, top_k)
+    if reference_answer:
+        st.subheader("📊 Cosine Similarity Scores")
+        openai_score = compute_cosine_similarity(openai_answer, reference_answer)
+        gemini_score = compute_cosine_similarity(gemini_answer, reference_answer)
+        cross_score = compute_cosine_similarity(openai_answer, gemini_answer)
 
-    context_openai = "\n\n".join([doc for doc, _ in top_docs_openai])
-    context_gemini = "\n\n".join([doc for doc, _ in top_docs_gemini])
-
-    # Generate answers
-    openai_answer = generate_openai(query, context_openai)
-    gemini_answer = generate_gemini(query, context_gemini)
-
-    # Reference answer
-    reference = data[0]["ideal_answer"]
-
-    # Evaluate
-    openai_scores = evaluate_responses(reference, openai_answer)
-    gemini_scores = evaluate_responses(reference, gemini_answer)
-
-    # Display results side by side
-    col1, col2 = st.columns(2)
-    with col1:
-        st.subheader("OpenAI Answer")
-        st.write(openai_answer)
-        st.markdown(f"**BLEU:** {openai_scores[0]:.4f} | **BERTScore F1:** {openai_scores[3]:.4f}")
-
-    with col2:
-        st.subheader("Gemini Answer")
-        st.write(gemini_answer)
-        st.markdown(f"**BLEU:** {gemini_scores[0]:.4f} | **BERTScore F1:** {gemini_scores[3]:.4f}")
+        st.write(f"OpenAI vs Reference: **{openai_score:.4f}**")
+        st.write(f"Gemini vs Reference: **{gemini_score:.4f}**")
+        st.write(f"OpenAI vs Gemini: **{cross_score:.4f}**")
