@@ -65,4 +65,36 @@ def generate_gemini_answer(query, context):
     return response.text.strip()
 
 # ====== STREAMLIT UI ======
-st.title("
+st.title("RAG Evaluation: OpenAI vs Gemini")
+
+uploaded_files = st.file_uploader("Upload PDF files", type=["pdf"], accept_multiple_files=True)
+query = st.text_input("Enter your question")
+
+if uploaded_files and query:
+    # Extract text and chunk
+    with st.spinner("Extracting and chunking text..."):
+        full_text = extract_text_from_pdfs(uploaded_files)
+        chunks = chunk_text(full_text)
+
+    # Retrieve top 1 chunk
+    top_context, score = retrieve_top_k(query, chunks, k=1)[0]
+
+    # Generate answers
+    with st.spinner("Generating answers..."):
+        openai_answer = generate_openai_answer(query, top_context)
+        gemini_answer = generate_gemini_answer(query, top_context)
+
+    # Display results
+    st.subheader("Retrieved Context")
+    st.write(top_context)
+
+    st.subheader("Answers")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**OpenAI Answer:**")
+        st.write(openai_answer)
+    with col2:
+        st.markdown("**Gemini Answer:**")
+        st.write(gemini_answer)
+
+    st.caption(f"Cosine similarity score: {score:.4f}")
