@@ -115,11 +115,11 @@ def generate_answer_openai(query, context):
     ensure_api_key("OpenAI", "OPENAI_API_KEY")
     from openai import OpenAI
     openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    prompt = f"Answer the question based on the context below.
+    prompt = f"""Answer the question based on the context below.
 Context:
 {context}
 Question: {query}
-Answer:"
+Answer:"""
     try:
         resp = openai.chat.completions.create(
             model="gpt-4o-mini",
@@ -129,6 +129,8 @@ Answer:"
         return resp.choices[0].message.content
     except Exception as e:
         raise RuntimeError(f"OpenAI generation error: {e}")
+    except Exception as e:
+        raise RuntimeError(f"OpenAI generation error: {e}")
 
 def generate_answer_gemini(query, context):
     global genai
@@ -136,14 +138,16 @@ def generate_answer_gemini(query, context):
     import google.generativeai as genai
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
     model = genai.GenerativeModel("gemini-2.0-flash")
-    prompt = f"Answer the question based on the context below.
+    prompt = f"""Answer the question based on the context below.
 Context:
 {context}
 Question: {query}
-Answer:"
+Answer:"""
     try:
         resp = model.generate_content(prompt)
         return resp.text
+    except Exception as e:
+        raise RuntimeError(f"Gemini generation error: {e}")
     except Exception as e:
         raise RuntimeError(f"Gemini generation error: {e}")
 
