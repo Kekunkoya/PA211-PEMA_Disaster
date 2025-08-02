@@ -26,7 +26,6 @@ embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
 # ------------------ PDF LOADER ------------------ #
 def extract_text_from_pdf(uploaded_file):
-    """Extract all text from a PDF file."""
     text = ""
     with pdfplumber.open(uploaded_file) as pdf:
         for page in pdf.pages:
@@ -37,7 +36,6 @@ def extract_text_from_pdf(uploaded_file):
 
 # ------------------ RETRIEVAL ------------------ #
 def retrieve_top_k(query, docs, k=1):
-    """Retrieve top-k most relevant document chunks."""
     doc_embeddings = embedder.encode(docs)
     query_embedding = embedder.encode([query])
     similarities = cosine_similarity(query_embedding, doc_embeddings)[0]
@@ -46,7 +44,6 @@ def retrieve_top_k(query, docs, k=1):
 
 # ------------------ LLM GENERATION ------------------ #
 def generate_openai_answer(query, context):
-    """Generate an answer using OpenAI."""
     prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
     response = openai_client.chat.completions.create(
         model="gpt-4o-mini",
@@ -56,28 +53,62 @@ def generate_openai_answer(query, context):
     return response.choices[0].message.content.strip()
 
 def generate_gemini_answer(query, context):
-    """Generate an answer using Gemini 1.5."""
     prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
     response = gemini_model.generate_content(prompt)
     return response.text.strip()
 
 # ------------------ COSINE SIMILARITY ------------------ #
 def compute_cosine_similarity(text1, text2):
-    """Compute cosine similarity between two texts."""
     embeddings = embedder.encode([text1, text2])
     return cosine_similarity([embeddings[0]], [embeddings[1]])[0][0]
 
 # ------------------ STREAMLIT APP ------------------ #
-st.title("📄 RAG Evaluation – OpenAI vs Gemini (No Cache)")
+st.title("📄 RAG Evaluation – OpenAI vs Gemini (Separate Scores)")
 
 uploaded_pdf = st.file_uploader("Upload a PDF", type=["pdf"])
 query = st.text_input("Enter your query:")
-reference_answer = st.text_area("Enter the reference answer (optional for scoring):", "")
+reference_answer = st.text_area("Enter the reference answer (for scoring):", "")
 
 if uploaded_pdf and query:
     # Extract text from PDF
     pdf_text = extract_text_from_pdf(uploaded_pdf)
-    docs = pdf_text.split("\n\n")  # split into paragraphs
+    docs = pdf_text.split("\n\n")
 
     # Retrieve context
-    top_context = " ".join(retrieve_top
+    top_context = " ".join(retrieve_top_k(query, docs, k=1))
+
+    # Generate answers
+    openai_answer = generate_openai_answer(query, top_context)
+    gemini_answer = generate_gemini_answer(query, top_context)
+
+    st.subheader("Retrieved Context")
+    st.write(top_context)
+
+    st.subheader("Answers")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**OpenAI GPT-4o-mini**")
+        st.write(openai_answer)
+    with col2:
+        st.markdown("**Gemini 1.5 Flash**")
+        st.write(gemini_answer)
+
+    if reference_answer.strip():
+        st.subheader("📊 Retrieval & Answer Scores")
+
+        # Retrieval score (context vs. reference)
+        openai_retrieval_score = compute_cosine_similarity(top_context, reference_answer)
+        gemini_retrieval_score = compute_cosine_similarity(top_context, reference_answer)
+
+        # Answer score (answer vs. reference)
+        openai_answer_score = compute_cosine_similarity(openai_answer, reference_answer)
+        gemini_answer_score = compute_cosine_similarity(gemini_answer, reference_answer)
+
+        # Similarity between OpenAI and Gemini answers
+        inter_model_similarity = compute_cosine_similarity(openai_answer, gemini_answer)
+
+        st.write(f"**OpenAI Retrieval Score:** {openai_retrieval_score:.4f}")
+        st.write(f"**Gemini Retrieval Score:** {gemini_retrieval_score:.4f}")
+        st.write(f"**OpenAI Answer Score:** {openai_answer_score:.4f}")
+        st.write(f"**Gemini Answer Score:** {gemini_answer_score:.4f}")
+        st.write(f"**OpenAI ↔ Gemini Answer Similarity:** {inter_model_similarity:.4f}")
