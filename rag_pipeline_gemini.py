@@ -1,46 +1,54 @@
-# rag_pipeline_gemini.py
 
 import os
-import pickle
-import faiss
+import json
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 import google.generativeai as genai
-from langchain_community.vectorstores import FAISS
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
-# --- Load Gemini FAISS Index ---
-def load_index():
-    index_path = "faiss_index_gemini.idx"
-    store_path = "docstore_gemini.pkl"
+# --- Load dataset and build embeddings cache ---
+dataset_path = os.path.join(os.path.dirname(__file__), "PA211_dataset.json")
+doc_texts = []
+doc_embeddings = None
 
-    if not os.path.exists(index_path) or not os.path.exists(store_path):
-        raise FileNotFoundError(f"Missing FAISS index or docstore for Gemini. Please run build_dual_faiss_indexes.py first.")
+def build_cache():
+    global doc_texts, doc_embeddings
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-    index = faiss.read_index(index_path)
-    with open(store_path, "rb") as f:
-        docstore = pickle.load(f)
+    with open(dataset_path, 'r', encoding='utf-8') as f:
+        data = json.load(f)
 
-    return index, docstore
+    doc_texts = [f"Q: {d['question']}\nA: {d['ideal_answer']}" 
+                 for d in data if 'question' in d and 'ideal_answer' in d]
 
-# --- Retrieve context from Gemini FAISS ---
+    print(f"Building embedding cache for {len(doc_texts)} documents...")
+    doc_embeddings = [genai.embed_content(model="models/text-embedding-004", content=text)["embedding"]
+                      for text in doc_texts]
+    doc_embeddings = np.array(doc_embeddings)
+    print("Embedding cache built.")
+
+# --- Retrieval ---
 def retrieve_context(query, top_k=3):
+    global doc_embeddings
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001", google_api_key=os.getenv("GEMINI_API_KEY"))
-    index, docstore = load_index()
-    vectorstore = FAISS(index=index, docstore=docstore, embeddings=embeddings)
+    if doc_embeddings is None:
+        build_cache()
+    query_emb = genai.embed_content(model="models/text-embedding-004", content=query)["embedding"]
+    sims = cosine_similarity([query_emb], doc_embeddings)[0]
+    top_indices = np.argsort(sims)[::-1][:top_k]
+    return [doc_texts[i] for i in top_indices]
 
-    docs = vectorstore.similarity_search(query, k=top_k)
-    return "\n".join([doc.page_content for doc in docs])
+# --- Main entry point for Gemini RAG ---
+def main(query: str, top_k: int = 3):
+    context_docs = retrieve_context(query, top_k=top_k)
+    context_str = "\n\n".join(context_docs)
+    prompt = f"Use the following context to answer the query:\n{context_str}\n\nQuery: {query}"
 
-# --- Run Gemini RAG ---
-def gemini_rag(query):
-    context = retrieve_context(query)
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    model = genai.GenerativeModel("gemini-2.0-flash")
-
-    response = model.generate_content(
-        f"Use this context to answer:\n\n{context}\n\nQuestion: {query}"
-    )
-    return response.text
-
+    try:
+        model = genai.GenerativeModel("gemini-pro")
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Gemini Error: {e}"
 
 
