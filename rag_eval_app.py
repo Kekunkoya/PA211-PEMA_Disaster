@@ -1,3 +1,5 @@
+# rag_notebook_comparison_app.py
+
 import streamlit as st
 import os
 import json
@@ -14,18 +16,31 @@ NOTEBOOK_OPENAI = "04_context_enriched_ragKemi.ipynb"
 NOTEBOOK_GEMINI = "G04_context_enriched_ragKemi.ipynb"
 
 # ---------------- FUNCTIONS ---------------- #
-def load_notebook_outputs(path):
-    """Extract text outputs from notebook cells."""
-    nb = nbformat.read(path, as_version=4)
-    outputs = []
-    for cell in nb.cells:
-        if cell.cell_type == "code" and "outputs" in cell:
-            for output in cell.outputs:
-                if output.output_type == "stream" and hasattr(output, "text"):
-                    outputs.append(output.text.strip())
-                elif output.output_type == "execute_result" and "text/plain" in output.data:
-                    outputs.append(output.data["text/plain"].strip())
-    return outputs
+def extract_rag_answers(nb_path, questions):
+    """Extract only RAG answers matching the dataset questions."""
+    nb = nbformat.read(nb_path, as_version=4)
+    answers = []
+    
+    for q in questions:
+        found_answer = None
+        for cell in nb.cells:
+            if cell.cell_type == "code" and "outputs" in cell:
+                for output in cell.outputs:
+                    text_out = None
+                    if output.output_type == "stream" and hasattr(output, "text"):
+                        text_out = output.text.strip()
+                    elif output.output_type == "execute_result" and "text/plain" in output.data:
+                        text_out = output.data["text/plain"].strip()
+                    
+                    # Only keep non-trivial answers
+                    if text_out and len(text_out.split()) > 3:
+                        found_answer = text_out
+                        break
+            if found_answer:
+                break
+        answers.append(found_answer if found_answer else "")
+    
+    return answers
 
 def cosine_score(text1, text2, embedder):
     emb = embedder.encode([text1, text2])
@@ -42,20 +57,26 @@ except FileNotFoundError:
     st.error(f"❌ Could not find {PA211_FILE}. Please place it in the same folder.")
     st.stop()
 
-# Load notebook outputs
+questions = [item["question"] for item in pa211_data]
+
+# Load aligned answers from notebooks
 try:
-    openai_outputs = load_notebook_outputs(NOTEBOOK_OPENAI)
-    gemini_outputs = load_notebook_outputs(NOTEBOOK_GEMINI)
+    openai_outputs = extract_rag_answers(NOTEBOOK_OPENAI, questions)
+    gemini_outputs = extract_rag_answers(NOTEBOOK_GEMINI, questions)
 except FileNotFoundError as e:
     st.error(f"❌ Missing notebook file: {e}")
     st.stop()
 
-# Prepare dataframe
+# Alignment check
+min_len = min(len(pa211_data), len(openai_outputs), len(gemini_outputs))
+if len(openai_outputs) != len(gemini_outputs) or len(openai_outputs) != len(pa211_data):
+    st.warning(f"⚠️ Length mismatch detected – trimming to {min_len} entries.")
+
 df = pd.DataFrame({
-    "Question": [item["question"] for item in pa211_data],
-    "Reference Answer": [item["ideal_answer"] for item in pa211_data],
-    "OpenAI Answer": openai_outputs[:len(pa211_data)],
-    "Gemini Answer": gemini_outputs[:len(pa211_data)]
+    "Question": [item["question"] for item in pa211_data[:min_len]],
+    "Reference Answer": [item["ideal_answer"] for item in pa211_data[:min_len]],
+    "OpenAI Answer": openai_outputs[:min_len],
+    "Gemini Answer": gemini_outputs[:min_len]
 })
 
 # Load embedding model
