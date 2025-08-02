@@ -1,123 +1,102 @@
 import streamlit as st
-import json
-import numpy as np
-from nltk.translate.bleu_score import sentence_bleu
-from bert_score import score as bert_score
-from langchain_community.embeddings import OpenAIEmbeddings  # ✅ Fixed import
-from langchain_community.embeddings import HuggingFaceEmbeddings
+import os
+import tempfile
+import fitz  # PyMuPDF
 from sentence_transformers import SentenceTransformer, util
-
-# --- New imports for embeddings ---
-from langchain_openai import OpenAIEmbeddings
-import google.generativeai as genai
-
-# --- For evaluation ---
 from bert_score import score as bert_score
-from nltk.translate.bleu_score import sentence_bleu
+import openai
+import google.generativeai as genai
+from dotenv import load_dotenv
 
-# --- Load environment variables ---
+# Load environment variables
 load_dotenv()
-openai_api_key = os.getenv("OPENAI_API_KEY")
-gemini_api_key = os.getenv("GEMINI_API_KEY")
+openai.api_key = os.getenv("OPENAI_API_KEY")
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-if not openai_api_key:
-    st.warning("⚠️ OPENAI_API_KEY not set in environment.")
-if not gemini_api_key:
-    st.warning("⚠️ GEMINI_API_KEY not set in environment.")
+# Initialize embedding model
+embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
-# --- Configure Gemini ---
-if gemini_api_key:
-    genai.configure(api_key=gemini_api_key)
+# PDF text extraction
+def extract_text_from_pdf(file):
+    text = ""
+    with fitz.open(stream=file.read(), filetype="pdf") as pdf:
+        for page in pdf:
+            text += page.get_text()
+    return text
 
+# Chunk text into fixed size
+def chunk_text(text, chunk_size=500):
+    return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-# -------- Embedding Builders --------
-def build_embeddings_openai(texts):
-    """Generate embeddings using OpenAI."""
-    try:
-        embeddings_model = OpenAIEmbeddings(model="text-embedding-3-small")
-        return embeddings_model.embed_documents(texts)
-    except Exception as e:
-        raise RuntimeError(f"OpenAI embedding error: {e}")
+# Build embeddings
+def build_embeddings(text_chunks):
+    return embedder.encode(text_chunks, convert_to_tensor=True)
 
+# Retrieve top K chunk
+def retrieve_top_k(query, chunks, chunk_embeddings, k=1):
+    query_embedding = embedder.encode(query, convert_to_tensor=True)
+    hits = util.semantic_search(query_embedding, chunk_embeddings, top_k=k)[0]
+    return [chunks[hit['corpus_id']] for hit in hits]
 
-def build_embeddings_gemini(texts):
-    """Generate embeddings using Gemini."""
-    try:
-        model = "models/text-embedding-004"
-        results = [genai.embed_content(model=model, content=txt)["embedding"] for txt in texts]
-        return results
-    except Exception as e:
-        raise RuntimeError(f"Gemini embedding error: {e}")
+# LLM generation
+def generate_openai(prompt):
+    resp = openai.ChatCompletion.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return resp.choices[0].message["content"]
 
+def generate_gemini(prompt):
+    model = genai.GenerativeModel("gemini-pro")
+    resp = model.generate_content(prompt)
+    return resp.text
 
-# -------- Retrieval --------
-def retrieve_top_k(query, docs, embeddings_fn, k=3):
-    """Return top k most similar docs for a query."""
-    query_emb = embeddings_fn([query])[0]
-    doc_embs = embeddings_fn(docs)
-    sims = cosine_similarity([query_emb], doc_embs)[0]
-    ranked_idx = np.argsort(sims)[::-1][:k]
-    return [(docs[i], sims[i]) for i in ranked_idx]
+# Evaluation metrics
+def evaluate(candidate, reference):
+    cosine_sim = util.cos_sim(embedder.encode(candidate), embedder.encode(reference)).item()
+    P, R, F1 = bert_score([candidate], [reference], lang="en", verbose=False)
+    return cosine_sim, P[0].item(), R[0].item(), F1[0].item()
 
+# Streamlit UI
+st.title("📄 RAG Evaluation App (PDF Upload)")
 
-# -------- Evaluation --------
-def evaluate_responses(reference, candidate):
-    """Return BLEU and BERTScore for two responses."""
-    try:
-        bleu = sentence_bleu([reference.split()], candidate.split())
-        P, R, F1 = bert_score([candidate], [reference], lang="en", verbose=False)
-        return {
-            "BLEU": round(bleu, 3),
-            "BERTScore_P": round(P.item(), 3),
-            "BERTScore_R": round(R.item(), 3),
-            "BERTScore_F1": round(F1.item(), 3)
-        }
-    except Exception as e:
-        return {"error": str(e)}
+uploaded_file = st.file_uploader("Upload a PDF", type=["pdf"])
+query = st.text_input("Enter your question/query:")
 
+if uploaded_file and query:
+    with st.spinner("Processing PDF..."):
+        text = extract_text_from_pdf(uploaded_file)
+        chunks = chunk_text(text, chunk_size=500)
+        chunk_embeddings = build_embeddings(chunks)
 
-# -------- Streamlit UI --------
-st.title("🔍 RAG Evaluation (No Cache)")
-st.write("Compare OpenAI and Gemini RAG results without embedding caches.")
+    with st.spinner("Retrieving top chunk..."):
+        top_chunk = retrieve_top_k(query, chunks, chunk_embeddings, k=1)[0]
 
-docs_input = st.text_area("Enter your documents (one per line):", height=150)
-query_input = st.text_input("Enter your query:")
-top_k = st.slider("Top K results:", 1, 5, 3)
+    st.subheader("Retrieved Context")
+    st.write(top_chunk)
 
-if st.button("Run Evaluation"):
-    if not docs_input.strip() or not query_input.strip():
-        st.error("Please provide both documents and query.")
-    else:
-        docs = [d.strip() for d in docs_input.split("\n") if d.strip()]
+    with st.spinner("Generating answers..."):
+        openai_answer = generate_openai(f"Answer the question based on the context:\n{top_chunk}\n\nQuestion: {query}")
+        gemini_answer = generate_gemini(f"Answer the question based on the context:\n{top_chunk}\n\nQuestion: {query}")
 
-        # Retrieve top results
-        st.subheader("Top Retrieved Documents")
-        try:
-            top_openai = retrieve_top_k(query_input, docs, build_embeddings_openai, k=top_k)
-            top_gemini = retrieve_top_k(query_input, docs, build_embeddings_gemini, k=top_k)
+    st.subheader("Model Answers")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**OpenAI Response:**")
+        st.write(openai_answer)
+    with col2:
+        st.markdown("**Gemini Response:**")
+        st.write(gemini_answer)
 
-            st.write("**OpenAI:**")
-            for doc, score in top_openai:
-                st.write(f"- {doc} (score: {score:.3f})")
+    with st.spinner("Evaluating..."):
+        cos_openai, p_openai, r_openai, f1_openai = evaluate(openai_answer, top_chunk)
+        cos_gemini, p_gemini, r_gemini, f1_gemini = evaluate(gemini_answer, top_chunk)
 
-            st.write("**Gemini:**")
-            for doc, score in top_gemini:
-                st.write(f"- {doc} (score: {score:.3f})")
-        except Exception as e:
-            st.error(f"Retrieval error: {e}")
-            st.stop()
+    st.subheader("Evaluation Results")
+    st.markdown("### OpenAI")
+    st.write(f"Cosine Similarity: {cos_openai:.4f}")
+    st.write(f"BERTScore - Precision: {p_openai:.4f}, Recall: {r_openai:.4f}, F1: {f1_openai:.4f}")
 
-        # Evaluate only top-1
-        if top_openai and top_gemini:
-            reference = top_openai[0][0]
-            openai_answer = top_openai[0][0]
-            gemini_answer = top_gemini[0][0]
-
-            st.subheader("Evaluation Metrics")
-            st.write("Comparing top-1 result from each model against OpenAI top-1 as reference.")
-
-            openai_scores = evaluate_responses(reference, openai_answer)
-            gemini_scores = evaluate_responses(reference, gemini_answer)
-
-            st.write("**OpenAI Scores:**", openai_scores)
-            st.write("**Gemini Scores:**", gemini_scores)
+    st.markdown("### Gemini")
+    st.write(f"Cosine Similarity: {cos_gemini:.4f}")
+    st.write(f"BERTScore - Precision: {p_gemini:.4f}, Recall: {r_gemini:.4f}, F1: {f1_gemini:.4f}")
