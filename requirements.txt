@@ -6,3 +6,4 @@ numpy
 nltk
 bert-score
 rouge-score
+python-dotenv
