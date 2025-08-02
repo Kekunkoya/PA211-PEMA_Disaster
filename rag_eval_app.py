@@ -1,7 +1,6 @@
 import streamlit as st
 import os
-import PyPDF2
-import numpy as np
+import glob
 from sklearn.metrics.pairwise import cosine_similarity
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
@@ -10,6 +9,7 @@ import google.generativeai as genai
 # ---------------- CONFIG ---------------- #
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+DOCS_FOLDER = "data"  # <-- Change to your folder path
 
 if not OPENAI_API_KEY:
     st.error("Please set your OPENAI_API_KEY in environment variables.")
@@ -24,27 +24,24 @@ gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 # Embedding model
 embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-# --------------- PDF LOADER --------------- #
-def extract_text_from_pdf(uploaded_file):
-    """Extract text from a PDF using PyPDF2."""
-    text = ""
-    try:
-        pdf_reader = PyPDF2.PdfReader(uploaded_file)
-        for page in pdf_reader.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-    except Exception as e:
-        st.error(f"Error reading PDF: {e}")
-    return text.strip()
+# --------------- LOAD DOCUMENTS --------------- #
+def load_documents_from_folder(folder_path):
+    """Load all .txt, .md, and .docx files from a folder."""
+    docs = []
+    for filepath in glob.glob(os.path.join(folder_path, "**"), recursive=True):
+        if os.path.isfile(filepath) and filepath.lower().endswith((".txt", ".md")):
+            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+                docs.append(f.read())
+        # Optional: handle PDFs here if needed
+    return docs
 
 # --------------- RETRIEVAL --------------- #
-def retrieve_top_k(query, docs, k=1):
+def retrieve_top_k(query, docs, k=2):
     """Retrieve top-k most relevant chunks from docs."""
     doc_embeddings = embedder.encode(docs)
     query_embedding = embedder.encode([query])
     similarities = cosine_similarity(query_embedding, doc_embeddings)[0]
-    top_indices = np.argsort(similarities)[-k:][::-1]
+    top_indices = similarities.argsort()[-k:][::-1]
     return [docs[i] for i in top_indices]
 
 # --------------- LLM GENERATION --------------- #
@@ -74,21 +71,22 @@ def compute_cosine_similarity(text1, text2):
     return cosine_similarity([emb[0]], [emb[1]])[0][0]
 
 # --------------- STREAMLIT APP --------------- #
-st.title("📄 RAG Evaluation – OpenAI vs Gemini (No Cache)")
+st.title("📄 Folder-based RAG Evaluation – OpenAI vs Gemini (No Cache)")
 
-uploaded_pdf = st.file_uploader("Upload a PDF", type=["pdf"])
 query = st.text_input("Enter your query:")
 reference_answer = st.text_area("Enter reference answer (optional for scoring):")
 
-if uploaded_pdf and query:
-    with st.spinner("Extracting PDF text..."):
-        pdf_text = extract_text_from_pdf(uploaded_pdf)
-        docs = [d for d in pdf_text.split("\n\n") if d.strip()]
+if query:
+    with st.spinner("Loading documents..."):
+        docs = load_documents_from_folder(DOCS_FOLDER)
+        if not docs:
+            st.error(f"No documents found in {DOCS_FOLDER}. Please add some .txt or .md files.")
+            st.stop()
 
     with st.spinner("Retrieving top context..."):
-        top_context = " ".join(retrieve_top_k(query, docs, k=1))
+        top_context = " ".join(retrieve_top_k(query, docs, k=2))
 
-    with st.spinner("Generating answers from OpenAI and Gemini..."):
+    with st.spinner("Generating answers..."):
         openai_answer = generate_openai_answer(query, top_context)
         gemini_answer = generate_gemini_answer(query, top_context)
 
