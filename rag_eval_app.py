@@ -1,111 +1,100 @@
 import streamlit as st
 import os
-import glob
-from sklearn.metrics.pairwise import cosine_similarity
+import json
+import nbformat
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sentence_transformers import SentenceTransformer
-from openai import OpenAI
-import google.generativeai as genai
+from sklearn.metrics.pairwise import cosine_similarity
 
 # ---------------- CONFIG ---------------- #
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-DOCS_FOLDER = "data"  # <-- Change to your folder path
+PA211_FILE = "PA211_dataset.json"
+NOTEBOOK_OPENAI = "04_context_enriched_ragKemi.ipynb"
+NOTEBOOK_GEMINI = "G04_context_enriched_ragKemi.ipynb"
 
-if not OPENAI_API_KEY:
-    st.error("Please set your OPENAI_API_KEY in environment variables.")
-if not GOOGLE_API_KEY:
-    st.error("Please set your GOOGLE_API_KEY in environment variables.")
+# ---------------- FUNCTIONS ---------------- #
+def load_notebook_outputs(path):
+    """Extract text outputs from notebook cells."""
+    nb = nbformat.read(path, as_version=4)
+    outputs = []
+    for cell in nb.cells:
+        if cell.cell_type == "code" and "outputs" in cell:
+            for output in cell.outputs:
+                if output.output_type == "stream" and hasattr(output, "text"):
+                    outputs.append(output.text.strip())
+                elif output.output_type == "execute_result" and "text/plain" in output.data:
+                    outputs.append(output.data["text/plain"].strip())
+    return outputs
 
-# Initialize clients
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
-genai.configure(api_key=GOOGLE_API_KEY)
-gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-
-# Embedding model
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-# --------------- LOAD DOCUMENTS --------------- #
-def load_documents_from_folder(folder_path):
-    """Load all .txt, .md, and .docx files from a folder."""
-    docs = []
-    for filepath in glob.glob(os.path.join(folder_path, "**"), recursive=True):
-        if os.path.isfile(filepath) and filepath.lower().endswith((".txt", ".md")):
-            with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-                docs.append(f.read())
-        # Optional: handle PDFs here if needed
-    return docs
-
-# --------------- RETRIEVAL --------------- #
-def retrieve_top_k(query, docs, k=2):
-    """Retrieve top-k most relevant chunks from docs."""
-    doc_embeddings = embedder.encode(docs)
-    query_embedding = embedder.encode([query])
-    similarities = cosine_similarity(query_embedding, doc_embeddings)[0]
-    top_indices = similarities.argsort()[-k:][::-1]
-    return [docs[i] for i in top_indices]
-
-# --------------- LLM GENERATION --------------- #
-def generate_openai_answer(query, context):
-    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
-    try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        return f"OpenAI API Error: {e}"
-
-def generate_gemini_answer(query, context):
-    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer:"
-    try:
-        response = gemini_model.generate_content(prompt)
-        return response.text.strip()
-    except Exception as e:
-        return f"Gemini API Error: {e}"
-
-# --------------- COSINE SIMILARITY --------------- #
-def compute_cosine_similarity(text1, text2):
+def cosine_score(text1, text2, embedder):
     emb = embedder.encode([text1, text2])
     return cosine_similarity([emb[0]], [emb[1]])[0][0]
 
-# --------------- STREAMLIT APP --------------- #
-st.title("📄 Folder-based RAG Evaluation – OpenAI vs Gemini (No Cache)")
+# ---------------- STREAMLIT UI ---------------- #
+st.title("📊 RAG Model Output Comparison – OpenAI vs Gemini")
 
-query = st.text_input("Enter your query:")
-reference_answer = st.text_area("Enter reference answer (optional for scoring):")
+# Load dataset
+try:
+    with open(PA211_FILE, "r") as f:
+        pa211_data = json.load(f)
+except FileNotFoundError:
+    st.error(f"❌ Could not find {PA211_FILE}. Please place it in the same folder.")
+    st.stop()
 
-if query:
-    with st.spinner("Loading documents..."):
-        docs = load_documents_from_folder(DOCS_FOLDER)
-        if not docs:
-            st.error(f"No documents found in {DOCS_FOLDER}. Please add some .txt or .md files.")
-            st.stop()
+# Load notebook outputs
+try:
+    openai_outputs = load_notebook_outputs(NOTEBOOK_OPENAI)
+    gemini_outputs = load_notebook_outputs(NOTEBOOK_GEMINI)
+except FileNotFoundError as e:
+    st.error(f"❌ Missing notebook file: {e}")
+    st.stop()
 
-    with st.spinner("Retrieving top context..."):
-        top_context = " ".join(retrieve_top_k(query, docs, k=2))
+# Prepare dataframe
+df = pd.DataFrame({
+    "Question": [item["question"] for item in pa211_data],
+    "Reference Answer": [item["ideal_answer"] for item in pa211_data],
+    "OpenAI Answer": openai_outputs[:len(pa211_data)],
+    "Gemini Answer": gemini_outputs[:len(pa211_data)]
+})
 
-    with st.spinner("Generating answers..."):
-        openai_answer = generate_openai_answer(query, top_context)
-        gemini_answer = generate_gemini_answer(query, top_context)
+# Load embedding model
+with st.spinner("Loading embedding model..."):
+    embedder = SentenceTransformer("all-MiniLM-L6-v2")
 
-    st.subheader("📌 Retrieved Context")
-    st.write(top_context)
+# Compute similarity and error scores
+df["OpenAI vs Ref"] = df.apply(lambda row: cosine_score(row["OpenAI Answer"], row["Reference Answer"], embedder), axis=1)
+df["Gemini vs Ref"] = df.apply(lambda row: cosine_score(row["Gemini Answer"], row["Reference Answer"], embedder), axis=1)
+df["OpenAI vs Gemini"] = df.apply(lambda row: cosine_score(row["OpenAI Answer"], row["Gemini Answer"], embedder), axis=1)
 
-    st.subheader("📝 Answer Comparison")
-    st.table({
-        "Model": ["OpenAI", "Gemini"],
-        "Answer": [openai_answer, gemini_answer]
-    })
+# Error = 1 - similarity
+df["OpenAI Error"] = 1 - df["OpenAI vs Ref"]
+df["Gemini Error"] = 1 - df["Gemini vs Ref"]
+df["Cross Error"] = 1 - df["OpenAI vs Gemini"]
 
-    if reference_answer:
-        st.subheader("📊 Similarity Scores")
-        openai_score = compute_cosine_similarity(openai_answer, reference_answer)
-        gemini_score = compute_cosine_similarity(gemini_answer, reference_answer)
-        cross_score = compute_cosine_similarity(openai_answer, gemini_answer)
+# Show table
+st.subheader("🔍 Comparison Table")
+st.dataframe(df)
 
-        st.table({
-            "Comparison": ["OpenAI vs Reference", "Gemini vs Reference", "OpenAI vs Gemini"],
-            "Cosine Similarity": [f"{openai_score:.4f}", f"{gemini_score:.4f}", f"{cross_score:.4f}"]
-        })
+# ---------------- HEATMAPS ---------------- #
+st.subheader("🔥 Cosine Similarity Heatmap")
+heatmap_data = df[["OpenAI vs Ref", "Gemini vs Ref", "OpenAI vs Gemini"]].T
+plt.figure(figsize=(12, 5))
+sns.heatmap(heatmap_data, annot=True, fmt=".2f", cmap="coolwarm", cbar=True)
+plt.title("Cosine Similarity Heatmap")
+plt.xlabel("Question Index")
+plt.ylabel("Comparison Type")
+st.pyplot(plt)
+
+st.subheader("🚨 Error Heatmap (1 - Similarity)")
+error_data = df[["OpenAI Error", "Gemini Error", "Cross Error"]].T
+plt.figure(figsize=(12, 5))
+sns.heatmap(error_data, annot=True, fmt=".2f", cmap="Reds", cbar=True)
+plt.title("Model Error Heatmap")
+plt.xlabel("Question Index")
+plt.ylabel("Error Type")
+st.pyplot(plt)
+
+# Download option
+csv = df.to_csv(index=False)
+st.download_button("📥 Download CSV", csv, "rag_comparison_results.csv", "text/csv")
