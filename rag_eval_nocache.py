@@ -1,8 +1,11 @@
-import os
 import streamlit as st
+import json
 import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
-from dotenv import load_dotenv
+from nltk.translate.bleu_score import sentence_bleu
+from bert_score import score as bert_score
+from langchain_community.embeddings import OpenAIEmbeddings  # ✅ Fixed import
+from langchain_community.embeddings import HuggingFaceEmbeddings
+from sentence_transformers import SentenceTransformer, util
 
 # --- New imports for embeddings ---
 from langchain_openai import OpenAIEmbeddings
