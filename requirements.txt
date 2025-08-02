@@ -9,4 +9,5 @@ rouge-score
 python-dotenv
 langchain-community
 PyPDF2
+sentence-transformers
 
