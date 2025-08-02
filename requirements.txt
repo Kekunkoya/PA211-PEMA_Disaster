@@ -12,4 +12,8 @@ PyPDF2
 sentence-transformers
 faiss-cpu
 pdfplumber
-
+streamlit
+nbformat
+pandas
+matplotlib
+seaborn
