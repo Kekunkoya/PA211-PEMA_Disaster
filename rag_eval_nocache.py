@@ -1,124 +1,117 @@
-import streamlit as st
 import os
+import streamlit as st
 import tempfile
-from PyPDF2 import PdfReader
+import PyPDF2
 import numpy as np
-from sentence_transformers import SentenceTransformer, util
 from openai import OpenAI
+from sentence_transformers import SentenceTransformer, util
 import google.generativeai as genai
 
-# ====== SETUP ======
-st.set_page_config(page_title="RAG Evaluation - OpenAI vs Gemini", layout="wide")
+# ==============================
+# CONFIGURE API KEYS
+# ==============================
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-openai_api_key = st.secrets.get("OPENAI_API_KEY", None)
-gemini_api_key = st.secrets.get("GEMINI_API_KEY", None)
+if not OPENAI_API_KEY:
+    st.error("Please set the OPENAI_API_KEY environment variable.")
+if not GEMINI_API_KEY:
+    st.error("Please set the GEMINI_API_KEY environment variable.")
 
-if not openai_api_key or not gemini_api_key:
-    st.error("Please set your OPENAI_API_KEY and GEMINI_API_KEY in Streamlit secrets.")
-    st.stop()
+# OpenAI & Gemini Setup
+client = OpenAI(api_key=OPENAI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
+gemini_model = genai.GenerativeModel("gemini-1.5-flash")
 
-client = OpenAI(api_key=openai_api_key)
-genai.configure(api_key=gemini_api_key)
+# Sentence Transformer model for similarity
+embedder = SentenceTransformer('all-MiniLM-L6-v2')
 
-embedder = SentenceTransformer("all-MiniLM-L6-v2")
-
-# ====== FUNCTIONS ======
-def extract_text_from_pdfs(uploaded_files):
-    """Extract text from uploaded PDFs."""
-    text = ""
+# ==============================
+# PDF LOADER & EMBEDDING
+# ==============================
+def load_pdfs_and_split(uploaded_files):
+    docs = []
     for uploaded_file in uploaded_files:
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             tmp_file.write(uploaded_file.read())
-            tmp_path = tmp_file.name
-        pdf_doc = PdfReader(tmp_path)
-        for page in pdf_doc.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
-        os.remove(tmp_path)
-    return text.strip()
+            tmp_file_path = tmp_file.name
+        
+        with open(tmp_file_path, "rb") as f:
+            reader = PyPDF2.PdfReader(f)
+            for page in reader.pages:
+                text = page.extract_text()
+                if text:
+                    chunks = [text[i:i+500] for i in range(0, len(text), 500)]
+                    docs.extend(chunks)
+    return docs
 
-def chunk_text(text, chunk_size=500, overlap=50):
-    """Split text into overlapping word chunks."""
-    words = text.split()
-    chunks = []
-    for i in range(0, len(words), chunk_size - overlap):
-        chunk = " ".join(words[i:i + chunk_size])
-        chunks.append(chunk)
-    return chunks
+def build_embeddings(texts):
+    return embedder.encode(texts, convert_to_tensor=True)
 
-def retrieve_top_k(query, docs, k=1):
-    """Retrieve top-k most relevant chunks using cosine similarity."""
-    doc_embeddings = embedder.encode(docs, convert_to_tensor=True)
-    query_embedding = embedder.encode([query], convert_to_tensor=True)
-    cos_scores = util.pytorch_cos_sim(query_embedding, doc_embeddings)[0]
-    top_results = np.argsort(-cos_scores)[:k]
-    return [(docs[idx], float(cos_scores[idx])) for idx in top_results]
+# ==============================
+# RETRIEVAL FUNCTION
+# ==============================
+def retrieve_top_k(query, docs, doc_embeddings, k=1):
+    query_emb = embedder.encode([query], convert_to_tensor=True)
+    hits = util.semantic_search(query_emb, doc_embeddings, top_k=k)[0]
+    return [(docs[hit['corpus_id']], hit['score']) for hit in hits]
 
+# ==============================
+# LLM GENERATION
+# ==============================
 def generate_openai_answer(query, context):
-    """Generate an answer using OpenAI GPT model."""
-    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer concisely:"
+    prompt = f"Answer the question based on the context:\n\n{context}\n\nQuestion: {query}"
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
-    return response.choices[0].message.content.strip()
+    return response.choices[0].message.content
 
 def generate_gemini_answer(query, context):
-    """Generate an answer using Gemini model."""
-    model = genai.GenerativeModel("gemini-pro")
-    prompt = f"Context:\n{context}\n\nQuestion: {query}\nAnswer concisely:"
-    response = model.generate_content(prompt)
-    return response.text.strip()
+    prompt = f"Answer the question based on the context:\n\n{context}\n\nQuestion: {query}"
+    response = gemini_model.generate_content(prompt)
+    return response.text
 
-# ====== STREAMLIT UI ======
-st.title("📄 RAG Evaluation: OpenAI vs Gemini")
+# ==============================
+# STREAMLIT UI
+# ==============================
+st.title("📄 RAG Evaluation (OpenAI vs Gemini 1.5)")
+st.write("Upload PDFs, enter a query, and compare OpenAI vs Gemini responses side-by-side.")
 
-uploaded_files = st.file_uploader("Upload PDF files", type=["pdf"], accept_multiple_files=True)
-query_mode = st.radio("Select mode:", ["Single Question", "Batch Questions"])
-
+uploaded_files = st.file_uploader("Upload PDF documents", type=["pdf"], accept_multiple_files=True)
 if uploaded_files:
-    with st.spinner("Extracting and chunking text..."):
-        full_text = extract_text_from_pdfs(uploaded_files)
-        chunks = chunk_text(full_text)
+    docs = load_pdfs_and_split(uploaded_files)
+    st.success(f"Loaded {len(docs)} chunks from {len(uploaded_files)} PDFs.")
+    doc_embeddings = build_embeddings(docs)
 
-    if query_mode == "Single Question":
-        query = st.text_input("Enter your question")
-        if query:
-            top_context, score = retrieve_top_k(query, chunks, k=1)[0]
-            with st.spinner("Generating answers..."):
-                openai_answer = generate_openai_answer(query, top_context)
-                gemini_answer = generate_gemini_answer(query, top_context)
+    query = st.text_input("Enter your question")
+    top_k = st.number_input("Top K passages to retrieve", min_value=1, max_value=5, value=1)
+
+    if st.button("Run RAG Evaluation"):
+        if query.strip() == "":
+            st.error("Please enter a question.")
+        else:
+            top_contexts = retrieve_top_k(query, docs, doc_embeddings, k=top_k)
+            combined_context = "\n\n".join([ctx for ctx, _ in top_contexts])
 
             st.subheader("Retrieved Context")
-            st.write(top_context)
+            st.write(combined_context)
 
+            openai_answer = generate_openai_answer(query, combined_context)
+            gemini_answer = generate_gemini_answer(query, combined_context)
+
+            st.subheader("Answers")
             col1, col2 = st.columns(2)
             with col1:
-                st.markdown("**OpenAI Answer:**")
+                st.markdown("**OpenAI GPT-4o-mini**")
                 st.write(openai_answer)
             with col2:
-                st.markdown("**Gemini Answer:**")
+                st.markdown("**Gemini 1.5 Flash**")
                 st.write(gemini_answer)
 
-            st.caption(f"Cosine similarity score: {score:.4f}")
-
-    else:
-        questions_file = st.file_uploader("Upload a TXT file with one question per line", type=["txt"])
-        if questions_file:
-            questions = [q.strip() for q in questions_file.read().decode("utf-8").splitlines() if q.strip()]
-            results = []
-            for q in questions:
-                top_context, score = retrieve_top_k(q, chunks, k=1)[0]
-                openai_answer = generate_openai_answer(q, top_context)
-                gemini_answer = generate_gemini_answer(q, top_context)
-                results.append((q, openai_answer, gemini_answer, score))
-
-            st.subheader("Batch Results")
-            for q, oa, ga, sc in results:
-                st.markdown(f"**Question:** {q}")
-                st.markdown(f"**OpenAI:** {oa}")
-                st.markdown(f"**Gemini:** {ga}")
-                st.caption(f"Cosine similarity: {sc:.4f}")
-                st.markdown("---")
+            st.subheader("Similarity Score (Cosine)")
+            openai_emb = embedder.encode([openai_answer], convert_to_tensor=True)
+            gemini_emb = embedder.encode([gemini_answer], convert_to_tensor=True)
+            score = util.cos_sim(openai_emb, gemini_emb).item()
+            st.write(f"Similarity between OpenAI and Gemini answers: **{score:.4f}**")
